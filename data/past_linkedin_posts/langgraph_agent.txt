@@ -1,0 +1,11 @@
+Built my first multi-node LangGraph agent this week. Here's what I got wrong initially.
+
+I assumed the hard part would be the LLM calls. It wasn't. The hard part was state — deciding what lives in the graph state, what gets passed between nodes, and what gets thrown away after each step.
+
+Once I treated state design like database schema design (explicit fields, clear ownership, no implicit mutations) everything else clicked into place.
+
+The agent now handles web research, style matching from past examples, draft writing, and a critique loop — all in a single compiled graph. Adding a new step is just adding a node and wiring an edge.
+
+If you're building with LangGraph, think about your state schema before you think about your nodes. It'll save you a full rewrite later.
+
+What's the most surprising architectural decision you've made while building agents?

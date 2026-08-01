@@ -1,0 +1,62 @@
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Local PostgreSQL Data Directory
+.pgdata/
+
+# Local Vector Store Data
+chroma_store/
+
+# Local Databases & Checkpoints
+*.db
+*.sqlite
+*.sqlite3
+
+# Python-generated & build files
+__pycache__/
+*.py[oc]
+*.pyc
+*.pyd
+build/
+dist/
+wheels/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+scripts/test_other_keys.py
+scripts/test_4_bugs_fixed.py
+scripts/test_deep_tutorial_generator.py
+scripts/test_nebius.py
+scripts/test_nvidia_direct.py
+
+# Personal files & artifacts
+*.pdf
+about_me.md
+challenges.md
+profile.yaml
+CLAUDE.md
+
+
+
+# Obsidian local settings (if applicable)
+.obsidian/
+
+# Log files
+*.log

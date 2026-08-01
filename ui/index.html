@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Personal AI Mentor — Companion Dashboard & Obsidian Graph Visualizer</title>
+  <meta name="description" content="Local-first Personal AI Mentor with Multi-Agent Orchestration, Goal Decomposition, and Interactive Obsidian Topic Graph Visualization.">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Marked.js for Markdown Rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+  <!-- Highlight.js for Code Highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+
+  <!-- Vis.js Network for Graph Visualization -->
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo-icon">
+          <i class="fa-solid fa-brain-circuit"></i>
+        </div>
+        <div class="brand-text">
+          <h1>AI Mentor</h1>
+          <span class="badge">v1.2 Active</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button id="nav-chat-btn" class="nav-item active" onclick="switchTab('chat')">
+          <i class="fa-solid fa-comments"></i>
+          <span>Mentor Chat</span>
+        </button>
+        <button id="nav-graph-btn" class="nav-item" onclick="switchTab('graph')">
+          <i class="fa-solid fa-diagram-project"></i>
+          <span>Obsidian Graph</span>
+        </button>
+        <button id="nav-roadmaps-btn" class="nav-item" onclick="switchTab('roadmaps')">
+          <i class="fa-solid fa-route"></i>
+          <span>Roadmaps</span>
+        </button>
+        <button id="nav-profile-btn" class="nav-item" onclick="switchTab('profile')">
+          <i class="fa-solid fa-user-gear"></i>
+          <span>Profile Facts</span>
+        </button>
+      </nav>
+
+      <div class="system-status">
+        <div class="status-indicator online"></div>
+        <div class="status-details">
+          <span class="status-title">Nebius LLM Tier</span>
+          <span class="status-sub">Llama-3.3-70B & MiniMax</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="main-content">
+      <!-- Header Bar -->
+      <header class="top-header">
+        <div class="header-title">
+          <h2 id="page-title">Interactive Mentor Chat</h2>
+          <p id="page-subtitle">Multi-Agent Orchestration & Real-time Goal Decomposition</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-secondary" onclick="newSession()">
+            <i class="fa-solid fa-plus"></i> New Session
+          </button>
+          <div class="user-avatar" title="Nikhil">
+            <span>NK</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- TAB 1: Chat Workspace -->
+      <section id="tab-chat" class="tab-content active">
+        <div class="chat-layout">
+          <!-- Main Chat Box -->
+          <div class="chat-container">
+            <div id="chat-thread" class="chat-thread">
+              <!-- Welcome Bubble -->
+              <div class="message mentor-message">
+                <div class="message-avatar">
+                  <i class="fa-solid fa-robot"></i>
+                </div>
+                <div class="message-content">
+                  <div class="sender-name">AI Mentor</div>
+                  <div class="message-body">
+                    Welcome back, Nikhil! I'm your persistent personal mentor. I can decompose multi-day learning goals into structured Obsidian roadmaps, generate deep tutorial notes, or plan your daily study schedule.
+                    <br><br>
+                    <strong>What would you like to focus on today?</strong>
+                  </div>
+                  <div class="prompt-chips">
+                    <button class="chip" onclick="sendPrompt('Create a 3-day roadmap for Rust programming')">
+                      💡 3-Day Rust Roadmap
+                    </button>
+                    <button class="chip" onclick="sendPrompt('Plan my day for 6 hours focusing on FastAPI and SQL')">
+                      📅 Plan My Day (6h)
+                    </button>
+                    <button class="chip" onclick="sendPrompt('Show my obsidian roadmaps')">
+                      🗺️ List Vault Roadmaps
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Typing Indicator -->
+            <div id="typing-indicator" class="typing-indicator hidden">
+              <div class="message-avatar">
+                <i class="fa-solid fa-robot"></i>
+              </div>
+              <div class="typing-content">
+                <div class="dots">
+                  <span></span><span></span><span></span>
+                </div>
+                <span id="agent-step-status" class="agent-status-text">Reasoning & Routing turn...</span>
+              </div>
+            </div>
+
+            <!-- Input Bar -->
+            <div class="chat-input-wrapper">
+              <form id="chat-form" onsubmit="handleChatSubmit(event)">
+                <input 
+                  type="text" 
+                  id="chat-input" 
+                  placeholder="Ask a question or request a goal breakdown (e.g. 'Create a 4-day interview prep roadmap')..." 
+                  autocomplete="off"
+                  required
+                />
+                <button type="submit" id="send-btn" class="send-btn">
+                  <i class="fa-solid fa-paper-plane"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Active Pipeline Sidebar -->
+          <div class="pipeline-sidebar">
+            <h3><i class="fa-solid fa-network-wired"></i> Orchestrator Graph</h3>
+            <div class="pipeline-card">
+              <div class="pipeline-header">Active Agents</div>
+              <ul id="pipeline-steps" class="pipeline-steps">
+                <li class="step active"><i class="fa-solid fa-circle-dot"></i> Router / Reasoner</li>
+                <li class="step idle"><i class="fa-regular fa-circle"></i> Goal Decomposer</li>
+                <li class="step idle"><i class="fa-regular fa-circle"></i> Daily Planner</li>
+              </ul>
+            </div>
+
+            <div class="memory-card">
+              <div class="memory-header"><i class="fa-solid fa-layer-group"></i> Active Context</div>
+              <div class="memory-stat">
+                <span>Working Memory:</span> <strong>LangGraph Checkpoint</strong>
+              </div>
+              <div class="memory-stat">
+                <span>Topic Storage:</span> <strong>Obsidian Vault</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: Obsidian Graph Visualizer -->
+      <section id="tab-graph" class="tab-content">
+        <div class="graph-layout">
+          <div class="graph-toolbar">
+            <div class="roadmap-select-group">
+              <label for="roadmap-select">Select Roadmap:</label>
+              <select id="roadmap-select" onchange="loadSelectedGraph()">
+                <option value="">Loading roadmaps...</option>
+              </select>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="loadSelectedGraph()">
+              <i class="fa-solid fa-arrows-rotate"></i> Refresh Graph
+            </button>
+          </div>
+          <div id="graph-container" class="graph-canvas"></div>
+        </div>
+      </section>
+
+      <!-- TAB 3: Roadmaps List -->
+      <section id="tab-roadmaps" class="tab-content">
+        <div class="roadmaps-container">
+          <div class="section-header">
+            <h3>Obsidian Vault Roadmaps</h3>
+            <span id="vault-path-badge" class="badge">/home/nik/Documents/AI-Mentor</span>
+          </div>
+          <div id="roadmaps-grid" class="roadmaps-grid">
+            <!-- Dynamic Roadmap Cards -->
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: Profile Facts -->
+      <section id="tab-profile" class="tab-content">
+        <div class="profile-container">
+          <div class="profile-card">
+            <h3><i class="fa-solid fa-user"></i> Learner Profile Facts</h3>
+            <div id="profile-details" class="profile-details">
+              <!-- Dynamic Profile Json / Fields -->
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Slide-over Tutorial Reader Modal/Drawer -->
+    <div id="reader-drawer" class="drawer-overlay hidden" onclick="closeDrawer(event)">
+      <div class="drawer-panel" onclick="event.stopPropagation()">
+        <div class="drawer-header">
+          <div class="drawer-title-group">
+            <span id="drawer-tag" class="badge">Obsidian Note</span>
+            <h3 id="drawer-title">Topic Title</h3>
+          </div>
+          <button class="btn-icon" onclick="closeDrawer(event)"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div id="drawer-body" class="drawer-body markdown-content">
+          <!-- Rendered Markdown Body -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Script -->
+  <script src="app.js"></script>
+</body>
+</html>
