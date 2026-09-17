@@ -1,0 +1,254 @@
+# MEMORY — the design of the memory layer
+
+> **Status:** design, agreed in discussion, not yet built. Companion to `GOAL.md`
+> (§4 stage 0 is this document's job).
+>
+> **The claim:** continuity across sessions is not achieved by keeping the context
+> window — it cannot be kept. It is achieved by **promoting what mattered out of
+> the transcript into a durable store, and pulling it back in on the next turn.**
+
+---
+
+## 1. The problem, stated exactly
+
+Two different things get confused:
+
+| | What it is | Survives a restart? |
+|---|---|---|
+| **The record** | everything that was said — the transcript | Yes. PI already writes every session to `~/.pi/agent/sessions/<cwd>/*.jsonl`, append-only, on disk |
+| **The context** | what the model can see *right now* | **No.** A finite window, compacted at a threshold and on overflow |
+
+So nothing is actually being *deleted* today. What is missing is **the path back**:
+the transcript is on disk, but nothing promotes it into memory, and nothing pulls
+memory back into the next session.
+
+The failure is continuity, not storage.
+
+## 2. The architecture
+
+```
+Tier 0 ── THE RECORD                    ~/.pi/agent/sessions/*.jsonl
+          Everything said. Append-only. Free. Never curated.
+          PI writes this already. We do not touch it.
+
+              ↓   the memory agent reads forward from a cursor
+
+Tier 1 ── CURATED MEMORY                data/
+          profile.yaml    facts about him
+          memories.jsonl  what was learned, with provenance + confidence
+          daylog.jsonl    what he actually did
+
+              ↓   injected each turn (a small core) + read on demand (depth)
+
+Tier 2 ── CONTEXT                       the window, this turn
+          Small, curated, current. Rebuilt every session from Tier 1.
+```
+
+**The one-line version:** Tier 0 is the past, kept for free. Tier 1 is what
+survived judgement. Tier 2 is what the mentor has in mind right now — and it is
+*rebuilt*, not preserved.
+
+## 3. The memory agent
+
+A **second PI process** — not a bespoke model call, and not a skill the mentor
+switches into. PI is already an agent with file tools, so running it again with
+different instructions is the cheapest way to get a genuinely separate worker.
+
+It is separated on **six** axes. The first five come free from the CLI; the sixth
+is the one that actually holds the design together.
+
+| Axis | How |
+|---|---|
+| Model | `--model <cheap tier>` — extraction is not a reasoning-heavy job |
+| Context | `--session-dir <its own>` + `--no-session` — it never sees the mentor's window |
+| Instructions | `--skill memory-keeper` — its own skill, its own procedure |
+| Tools | `--tools read,grep,write` — it cannot touch the calendar or run commands |
+| Context files | `--no-context-files` — it does not load `AGENTS.md`; it is not the mentor |
+| **Write permission** | **Its own permission gate allows `data/` only** — see §4 |
+
+```bash
+pi -p "<curate from cursor>" \
+   --no-extensions -e mentor/extensions/memory-writer.ts \
+   --no-skills --skill memory-keeper --no-context-files \
+   --model <cheap-tier> --session-dir .pi/memory-sessions --no-session \
+   --tools read,grep,write
+```
+
+## 4. The separation invariant — the load-bearing part
+
+Different context is not separation. **Disjoint write permissions are.**
+
+The mentor's gate today allows `learning/` and nothing else. The memory agent's
+gate should allow `data/` and nothing else. Then:
+
+- the mentor **cannot corrupt memory**
+- the memory agent **cannot touch the curriculum**
+- neither can reach the other's domain, by construction
+
+That is the old "single writer" rule, but enforced **per agent instead of per
+runtime** — and it is stronger, because it is structural rather than a convention.
+
+### One writer per file
+
+To keep it true, no file may have two writers:
+
+| File | Written by | Read by |
+|---|---|---|
+| `data/memories.jsonl` | **the memory agent only** | the mentor |
+| `data/profile.yaml` | **the memory agent only** | the mentor |
+| `data/daylog.jsonl` | **the mentor** (via a `log_day_event` tool) | the memory agent |
+| `data/requests.jsonl` | **the mentor** (explicit "remember this") | the memory agent |
+
+`data/requests.jsonl` is the seam: the mentor appends a *request* instead of
+writing memory itself, and the agent drains it. Two writers, two files, no shared
+mutable state — which also solves concurrency, since appending a line is safe
+where rewriting a file is not.
+
+## 5. The cursor — why *when* it runs stops mattering
+
+The agent reads the transcript **forward from where it last stopped**, tracked in
+`data/.curator_cursor.json`:
+
+```json
+{ "session": "2026-09-17_abc123", "entry": 418, "curated_at": "..." }
+```
+
+This is the piece that makes the whole design robust:
+
+- **It cannot skip anything.** A missed run is caught on the next one.
+- **It is idempotent.** Re-running over the same range changes nothing.
+- **Timing is no longer critical.** Because the source of truth is the transcript
+  on disk — not an in-memory payload — the agent does not have to run at the exact
+  moment context is lost. It can run late, or twice, or after a crash.
+
+Without the cursor, the design depends on a hook firing at precisely the right
+instant. With it, the hooks are conveniences rather than requirements.
+
+## 6. What gets promoted
+
+The promotion filter is the judgement call, and it is deliberately narrow. A
+memory is written **only** if it is one of:
+
+- a **fact** about him (`user_stated` — he said it)
+- a **preference** or **constraint** that should shape future plans
+- a **goal**, target, or commitment
+- a **struggle**: something that confused him, or a mistake worth not repeating
+- an **observation** with a repeated pattern behind it (`data_derived`)
+
+Everything else stays in Tier 0. **The agent's silence is the forgetting** — that
+is the whole mechanism. It never has to file things away for disposal, because
+the low-priority bucket is the transcript that already exists.
+
+> This is the part that makes it tractable: an **append-only promotion filter**
+> over a log, not a filing system with a trash can.
+
+### Every memory carries its provenance
+
+| `source` | Starts at | Ceiling | Meaning |
+|---|---|---|---|
+| `user_stated` | 0.95 | 1.0 | He told me — trusted |
+| `data_derived` | 0.70 | 0.95 | Computed from his actual behaviour |
+| `mentor_inferred` | 0.40 | **0.60** | A guess — the mentor must **ask**, not assert |
+
+Plus **the quote it came from**, so a wrong memory is traceable to the sentence
+that produced it.
+
+## 7. Guardrails — this is a fabrication surface
+
+A second agent that reads a transcript and writes *"facts about him"* can be
+wrong, and a wrong memory **persists and compounds**. The mentor then asserts it
+confidently — which is the exact failure `GOAL.md` §5.1 forbids.
+
+So the memory agent is held to the same standard as the mentor:
+
+1. **Provenance is mandatory.** No memory without a `source` and a supporting
+   quote. If it cannot cite the sentence, it does not write the memory.
+2. **`mentor_inferred` is capped at 0.60 and marked unconfirmed.** The mentor
+   must *ask* about those ("am I reading that wrong?"), never assert them.
+3. **Append-only. Corrections supersede, never delete.** A wrong memory is
+   corrected by adding the new one and setting `superseded_by` on the old.
+4. **It decides what is worth keeping, never what is true.** The two judgements
+   are different, and only the first is its job.
+5. **It never touches the curriculum, the calendar, or code** — its gate denies
+   that, and its prompt says so anyway.
+6. **Fail soft.** A broken curator means memory goes stale, not that the mentor
+   breaks. It must never block a turn.
+
+## 8. When it runs
+
+Because of the cursor, these are conveniences, not requirements. In order of
+value:
+
+| Trigger | Why it is here |
+|---|---|
+| **`session_before_compact`** | PI fires this exactly when context is about to be lost and hands over `branchEntries` — the messages being discarded. Letting the curator read those means **compaction can never lose something that mattered** |
+| **`session_shutdown`** | Session ends — a cheap sweep so the next session starts from current memory |
+| **Daily (cron)** | A backstop. Catches anything the hooks missed |
+| **On demand** | Explicit *"remember this"* — appended to `data/requests.jsonl`, drained immediately |
+
+**Deliberately NOT per-turn.** It would double cost and latency for a need the
+compaction hook already covers.
+
+> **Note on the compaction hook:** do not make the turn wait for a full PI run.
+> The curator reads the transcript from disk, so it can be fired and forgotten —
+> the cursor guarantees nothing is skipped.
+
+## 9. Pulling memory back in
+
+Promotion is only half the loop. The other half is getting Tier 1 into Tier 2:
+
+- **A small always-on core** injected each turn — anchor facts, active goals,
+  current roadmap state. Keep it small; it is paid for on every turn.
+- **`recall_memories`** for depth on demand — a grep over `memories.jsonl`, not a
+  vector search. At this corpus size, reading beats embedding.
+- **`get_identity` / `get_history`** for the shaped views.
+
+This is what actually delivers continuity: the mentor does not *remember* last
+week, it **re-reads** what was promoted, every session.
+
+## 10. Deliberately deferred
+
+Naming these so they are not built early — the same discipline `GOAL.md` §7 uses.
+
+- **Semantic search / embeddings.** Deleted with the Python layer, and correctly.
+  At hundreds of memories, `grep` + read wins. Revisit at thousands.
+- **Consolidation tiers** (episodic → weekly → monthly → facts). The old system
+  had it and the idea was sound — it is the human "sleep" layer — but the curator
+  plus the compaction hook covers the real need. Add it when the curated store is
+  big enough to need summarising.
+- **A dashboard over memory.** The files are readable. A UI is a later view, not
+  the thing itself.
+
+## 11. Open decisions
+
+| # | Question | Leaning |
+|---|---|---|
+| **M1** | Explicit *"remember this"* — queue it or trigger the curator immediately? | **Trigger immediately.** Instant confirmation is worth it, and the cursor keeps it safe |
+| **M2** | Which tier writes memory? | Cheap/fast for extraction. The strong tier only when merging contradictions |
+| **M3** | Does the mentor get *any* write access to `data/`? | **No.** Requests go through `data/requests.jsonl`. One writer per file is the invariant |
+| **M4** | How much is injected every turn vs. read on demand? | Small core injected; everything else on demand. Budget it — it is per-turn cost |
+| **M5** | Does the curator see `branchEntries` or the session JSONL? | The JSONL, via the cursor. `branchEntries` is the fallback if a session is mid-flight |
+
+**M3 is the one to get right.** The moment the mentor can write memory files
+directly, there are two writers again, and the whole separation in §4 stops being
+true.
+
+---
+
+## 12. What this replaces
+
+For the record, because the old design got some of this right and it is worth
+being explicit about what is being kept:
+
+| Old (Python) | Now |
+|---|---|
+| `dna_memory` table + a 4-tier confidence model | kept — `data/memories.jsonl` with the same provenance/confidence idea |
+| Async reflection after every turn | replaced — a separate agent on a cursor, not inline work |
+| 384-dim embeddings for recall | dropped — `grep` over text at this scale |
+| Chroma for a voice store | dropped with the career module |
+| Postgres for 77 rows | `data/`, as files |
+| Consolidation tiers | deferred, not deleted from the plan |
+
+The parts that were load-bearing were the **provenance model** and the **idea that
+not everything deserves remembering**. Those are kept. The infrastructure around
+them was the problem, not the ideas.
