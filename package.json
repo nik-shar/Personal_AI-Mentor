@@ -7,7 +7,7 @@
   "scripts": {
     "skills": "node scripts/tools/migrate-toolkits-to-skills.mjs",
     "mentor": "bash scripts/run_pi_mentor.sh",
-    "test:mentor": "node --test mentor/test/*.test.ts"
+    "test": "node --test mentor/test/*.test.ts"
   },
   "dependencies": {
     "yaml": "^2.9.0"
