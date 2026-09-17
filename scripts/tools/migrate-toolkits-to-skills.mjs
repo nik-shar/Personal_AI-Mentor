@@ -140,6 +140,15 @@ const TOOL_REGISTRY = {
   save_daily_plan: "Persist today's plan and mirror its timed items onto the calendar grid.",
   log_day_event:
     "Record a moment of his day in his own words — waking up, starting or switching an activity, lunch, going to sleep — and get back the interval it closed.",
+  // memory agent only — mentor/extensions/memory-writer.ts
+  curator_pending: "Everything said since the last curation, read forward from the cursor.",
+  curator_advance: "Mark the pending range as curated. The commit point — nothing after it re-reads that range.",
+  curator_requests: "Explicit 'remember this' requests from the mentor. Drains the queue.",
+  memory_write: "Append one memory, with its source and the quote it came from.",
+  memory_supersede: "Correct a memory: write the replacement and point at the old one. Nothing is deleted.",
+  profile_set: "Set one structured fact about him (identity, career, goals, skills, preferences).",
+  attention_raise:
+    "Queue an observation for the mentor to consider — a signal, never an instruction.",
 };
 
 // Pure computation in TypeScript (mentor/src/pure/). No file or network hop, so
@@ -197,6 +206,10 @@ const USE_WHEN = {
     "learn what it would take to work in it — any request to turn a codebase into " +
     "concepts, a curriculum, a roadmap, or a study plan. Also use when he asks what he " +
     "would need to learn for a project, or where his gaps are for one.",
+  "memory-keeper":
+    "Use when curating the conversation into memory: reading what was said, deciding what " +
+    "is worth keeping, and writing it with provenance. Runs as its own agent, after a " +
+    "session or at compaction — never as part of the mentor's reply.",
 };
 
 /** Which real tools each skill leans on. Every name is validated at build time. */
@@ -227,6 +240,15 @@ const SKILL_TOOLS = {
     "find_available_slots",
     "place_time_block",
   ],
+  "memory-keeper": [
+    "curator_requests",
+    "curator_pending",
+    "memory_write",
+    "memory_supersede",
+    "profile_set",
+    "attention_raise",
+    "curator_advance",
+  ],
 };
 
 /** Built-in PI tools worth naming for a given skill. */
@@ -236,6 +258,7 @@ const SKILL_BUILTINS = {
   "calendar-manager": [],
   "tutorial-writer": ["read", "grep", "find"],
   "repo-architect": ["read", "grep", "find", "ls", "bash"],
+  "memory-keeper": ["read", "grep"],
 };
 
 // Hand-written, and ONLY for capabilities that genuinely do not exist yet.
@@ -256,6 +279,11 @@ const SKILL_GAPS = {
     "wrote them; nothing reads back the real time he logged against a node to adjust them. " +
     "Say so when you present them, and when he overruns a topic consistently, revise the " +
     "estimate out loud rather than quietly re-planning.",
+  "memory-keeper":
+    "**You run when something triggers you, not continuously.** The mentor's compaction and " +
+    "shutdown hooks are not wired yet, so curation is currently a manual or cron invocation " +
+    "(`scripts/run_memory_curator.sh`). The cursor makes a late run safe — nothing is skipped — " +
+    "but no memory is written until that command runs.",
 };
 
 // ---------------------------------------------------------------------------

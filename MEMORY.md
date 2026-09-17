@@ -313,3 +313,43 @@ being explicit about what is being kept:
 The parts that were load-bearing were the **provenance model** and the **idea that
 not everything deserves remembering**. Those are kept. The infrastructure around
 them was the problem, not the ideas.
+
+---
+
+## 13. What is actually built
+
+Written after the code, so the doc reflects reality rather than intent.
+
+| Piece | Where | State |
+|---|---|---|
+| The store — append-only jsonl, code-owned ceilings, supersede, profile, attention, requests | `mentor/src/memory/store.ts` | ✅ built, 17 tests |
+| The cursor + transcript reader | `mentor/src/memory/transcript.ts` | ✅ built, incl. the trailing-newline fix below |
+| The curator's tools + its `data/`-only gate | `mentor/curator/extension.ts` | ✅ built |
+| The curator's instruction set | `toolkits/memory-keeper/` → `mentor/skills/memory-keeper/` | ✅ generated |
+| The launcher (six-axis isolation) | `scripts/run_memory_curator.sh` | ✅ works end to end |
+| The mentor's side: `remember` + `read_memory` | `mentor/extensions/remember.ts` | ✅ built |
+
+**Decisions, resolved:**
+
+| # | Decision | Resolution |
+|---|---|---|
+| M1 | Queue or trigger immediately? | The mentor queues to `requests.jsonl`; a curator run drains it. Immediate triggering is a launcher call away |
+| M2 | Which tier writes memory? | A separate, configurable tier (`CURATOR_PROVIDER`/`CURATOR_MODEL`) |
+| M3 | Does the mentor get `data/` write access? | **No.** `remember` appends a request; the gate denies everything else |
+| M4 | Injected each turn vs. read on demand? | `read_memory` on demand. Always-on injection is not built |
+| M5 | `branchEntries` or the JSONL? | The JSONL, via the cursor. The compaction hook is not wired |
+
+**Two bugs the tests caught, worth remembering:**
+
+1. **The trailing-newline cursor bug** (`transcript.ts`). `split("\n")` on a file
+   ending in a newline yields a trailing `""`. Counting it as consumed put the
+   cursor *at* the next append instead of before it, so the first message of every
+   new range was silently skipped — data loss with no error. Fixed by counting
+   consumed lines, not array length.
+2. **`includeInactive` was still excluding superseded rows.** The pointer check ran
+   before the flag, so "show me everything" showed less. The store would have been
+   unauditable in exactly the case it mattered.
+
+**Still not built** (deliberately, per §10): the always-on context injection, the
+compaction/shutdown hooks, consolidation tiers, semantic search, any UI.
+
