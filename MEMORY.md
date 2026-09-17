@@ -104,6 +104,67 @@ writing memory itself, and the agent drains it. Two writers, two files, no share
 mutable state — which also solves concurrency, since appending a line is safe
 where rewriting a file is not.
 
+### Control flow: state, not instructions
+
+The memory agent **writes memory. It does not tell the mentor what to do.**
+
+This is the boundary most likely to be re-litigated, so it is written down
+explicitly. The naive version — *the memory agent watches the chat and instructs
+the mentor to change strategy* — turns it into a supervisor, and that breaks four
+things at once:
+
+1. **Two directors, no accountability.** The mentor owns the persona, the
+   constitution, the crisis guardrail and the consent rules. A background process
+   issuing orders bypasses all of it — the guardrails fire on *the mentor's turn*
+   and have no hook on "an instruction arrived."
+2. **It would be instructing blind.** The curator reads the transcript *after the
+   fact*. It does not know the current mood, or what was just said. Directing from
+   there produces the classic failure: *"why is it suddenly pushing this?"*
+3. **No confidence gate applies.** A memory at `mentor_inferred` is capped at 0.60
+   and the mentor must *ask*. As an **instruction** there is no cap — it is an
+   order, obeyed.
+4. **The separation collapses.** An agent that steers the mentor's behaviour is
+   writing into the mentor's domain. §4 stops being true.
+
+**The same effect, through readable state:**
+
+| | Instruction | State |
+|---|---|---|
+| Curator writes | `{"instruction": "raise accountability to 4"}` | `{"content": "Missed 4 of the last 6 scheduled blocks", "source": "data_derived", "confidence": 0.70, "user_confirmed": false}` |
+| Mentor | obeys — cannot explain why | reads it, **decides**, and can be argued with |
+| Correction | none available | he can say *"those were cancelled, not missed"* |
+
+The behavioural outcome is the same. The difference is that the mentor **owns the
+response**, the confidence gate still applies, and the belief is traceable to a
+sentence.
+
+> **The rule:** the memory layer maintains the *state that strategy is derived
+> from*. It never adjusts strategy itself. Continuity comes from the mentor
+> re-reading state each session and choosing — not from being commanded.
+
+### What the curator may flag
+
+There is a useful middle ground between "remember a fact" and "issue an order":
+the curator may **queue items for the mentor's attention** — signals it noticed,
+which the mentor decides whether to act on, and when.
+
+- an **unresolved thread** — *"he said he'd revisit the argmax step three times"*
+- a **contradiction** — *"he said he's fluent in Python; he also said he's shaky on it"*
+- **system state** — *"no day has been planned in nine days"*
+
+These go to `data/attention.jsonl`, and they are **inputs to a decision, not
+decisions**. A mentor sentence built from one sounds like *"you've mentioned that
+derivation a few times — want to actually work it, or is it parked?"* That is
+influence. An instruction would be *"tell him to study the argmax step."*
+
+**The old design drew exactly this line, and it is worth honouring.** Its
+personality layer held `accountability_level`, `coaching_emphasis`,
+`framing_that_works` and `framing_that_bounces` — real strategy state — but it
+shipped with **`auto_adjust: False`**, and the documented rule was *"escalation
+only via explicit command."* Observations were written as `data_derived`
+memories, never as behavioural changes. Memory **informed**; it did not steer.
+That judgement survives the move to a separate agent.
+
 ## 5. The cursor — why *when* it runs stops mattering
 
 The agent reads the transcript **forward from where it last stopped**, tracked in
