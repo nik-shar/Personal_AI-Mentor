@@ -7,7 +7,10 @@ This document defines the specialized domain skills, tool capabilities, implemen
 ## 1. Core Skills & Capabilities
 
 ### 🧠 Strategic Routing & Intent Recognition
-- **Skill:** Accurately determines whether a user's request requires specialist sub-agents (`daily_planner`, `goal_decomposer`, `learning_monitor`, `linkedin_writer`) or direct high-level mentorship.
+- **Skill:** Accurately determines whether a user's request requires specialist sub-agents (`goal_decomposer`, `linkedin_writer`, `job_hunter`) or direct high-level mentorship.
+- **Absorbed skills (no sub-agent):** Daily planning and learning logging are now orchestrator skills
+  handled directly via the harness tool loop — `save_daily_plan`, `trim_plan_to_fit`,
+  `log_learning_session`, `compute_learning_streak`, `get_available_topic_nodes`.
 - **Target Outcome:** Zero misrouted requests; seamless routing to specialist agents when tasks are clear.
 
 ### 🔍 Context Sufficiency Calibration (1–2–3 Rubric)
@@ -27,6 +30,18 @@ This document defines the specialized domain skills, tool capabilities, implemen
 
 ### 📥 Question Queueing & Opportunistic Surfacing
 - **Skill:** Holds non-blocking questions in `open_questions` memory and surfaces at most **one question opportunistically** during weekly check-ins or natural conversational lulls.
+
+### ⏱️ Calendar Ownership (48-slot day grid)
+- **Skill:** Reads and writes Nik's real calendar — a rolling 48×30-minute grid — with code-validated tools. Availability is always computed by code, never guessed.
+- **Tools:** `get_day_grid` (read free/busy/anchors), `find_available_slots` (candidate windows for a duration), `place_time_block` (book a validated block — 30-min aligned, overlap + anchor guarded), `set_anchor` (reserve sleep/meal/commute/gym).
+- **Target Outcome:** When Nik says "I have 3 hours," the mentor confidently answers "here's where they fit" — and can lock them in with his consent. When he asks "am I free at 4?", the mentor answers from the grid, not from memory.
+- **Anchor discipline:** sleep/meal/commute/gym anchors are hard walls; task placement never crosses them. Anchor conflicts are surfaced honestly, and Nik owns final say over his anchors.
+- **Activated via:** the `calendar-manager` toolkit overlay + `TOOLKIT_CALENDAR_SWITCH_SIGNALS` backstop in `apply_toolkit_guardrail` (scheduling/availability/anchor turns force `direct_response` + calendar-manager).
+
+### 📜 Tutorial Command Execution (`write_tutorial`)
+- **Skill:** Executes direct "write a tutorial / deep note on X" commands through the goal_decomposer's **single-topic mode** — one note, built around the mentor's guidance (weaknesses, subtopics to focus) rather than a full roadmap decomposition.
+- **Mechanics:** reasoner routes to `goal_decomposer` with task_type `write_tutorial`; the decompiser's `tutorial_architect` produces a one-node spec whose `what_to_cover` is the mentor's emphasis; the standard it must meet lives in the external `tutorial-writer` toolkit (philosophy/behaviors/guardrails/workflows) — including the parsed `rules:` block enforced by code with rejection-feedback revision.
+- **Target Outcome:** "write me a tutorial on DPO derivation — I kept tripping on the argmax step" produces a single vault note built *around* that step.
 
 ---
 

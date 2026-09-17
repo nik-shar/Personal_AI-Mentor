@@ -16,13 +16,14 @@ a separate, deliberate step outside the agent's own logic.
 """
 
 from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
+
 from pydantic import BaseModel, Field
 
 from .memory import MemorySlice
-
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -119,7 +120,7 @@ class AgentResult(BaseModel):
     completed_at: datetime = Field(default_factory=datetime.utcnow)
 
     output: str                           # the primary human-readable result of this run
-    # e.g. for learning_monitor: "You logged React deep-dive today, 5 day streak"
+    # e.g. for the planner skill: "You logged a React deep-dive today, 5 day streak"
     # e.g. for linkedin_writer: could duplicate the draft text, or a short summary
     # pointing to draft_suggestions below — pick one convention and stick to it.
 
@@ -144,7 +145,7 @@ class AgentResult(BaseModel):
 # ---------------------------------------------------------------------------
 # Optional: batch wrapper, only needed if/when the orchestrator fans out to
 # multiple agents in a single cycle (e.g. an evening run that triggers both
-# learning_monitor and a daily-digest agent together). Not required for the
+# (e.g. an evening run that triggers both the planner skill and a daily-digest agent together). Not required for the
 # single-agent-per-turn case — include only if you decide to support fan-out.
 # ---------------------------------------------------------------------------
 

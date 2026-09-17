@@ -1,0 +1,105 @@
+% Tailored resume template — FIXED, known-good LaTeX owned by code.
+% The LLM never sees or edits this file. It produces structured content only
+% (TailoredResumeDraft); render.py injects that content here via Jinja2 with
+% custom double-bracket / bracket-percent delimiters so LaTeX braces never clash.
+% All injected strings are LaTeX-escaped by render.py before rendering.
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage[margin=0.5in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{fontspec}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\setlist[itemize]{leftmargin=0.16in, itemsep=1pt, topsep=2pt, parsep=0pt}
+\titleformat{\section}{\large\scshape\raggedright}{}{0em}{}[\titlerule]
+\titlespacing*{\section}{0pt}{6pt}{4pt}
+
+\begin{document}
+
+%---------- HEADING ----------
+\begin{center}
+    {\LARGE \textbf{[[ name ]]}}\\[3pt]
+    \small [[ contact_line ]]
+\end{center}
+[% if summary %]
+
+%---------- SUMMARY ----------
+[[ summary ]]
+\vspace{4pt}
+[% endif %]
+[% if experience %]
+
+%---------- EXPERIENCE ----------
+\section{PROFESSIONAL EXPERIENCE}
+[% for exp in experience %]
+\textbf{[[ exp.role ]]} \hfill [[ exp.period ]]\\
+\textit{[[ exp.company ]]}[% if exp.location %] \hfill \textit{[[ exp.location ]]}[% endif %]
+\begin{itemize}
+[% for b in exp.bullets %]
+  \item \small{[[ b ]]}
+[% endfor %]
+\end{itemize}
+[% if not loop.last %]\vspace{4pt}[% endif %]
+[% endfor %]
+[% endif %]
+[% if education %]
+
+%---------- EDUCATION ----------
+\section{EDUCATION}
+[% for e in education %]
+\textbf{[[ e.institution ]]} \hfill [[ e.period ]]\\
+\textit{[[ e.degree ]]}
+[% if e.details %]
+\begin{itemize}
+[% for d in e.details %]
+  \item \small{[[ d ]]}
+[% endfor %]
+\end{itemize}
+[% endif %]
+[% if not loop.last %]\vspace{4pt}[% endif %]
+[% endfor %]
+[% endif %]
+[% if projects %]
+
+%---------- PROJECTS ----------
+\section{PROJECTS}
+[% for p in projects %]
+\textbf{[[ p.name ]]}[% if p.tech %] $|$ \emph{[[ p.tech | join(", ") ]]}[% endif %][% if p.link %] \hfill \href{[[ p.link ]]}{[[ p.link_label ]]}[% endif %]
+\begin{itemize}
+[% for b in p.bullets %]
+  \item \small{[[ b ]]}
+[% endfor %]
+\end{itemize}
+[% if not loop.last %]\vspace{4pt}[% endif %]
+[% endfor %]
+[% endif %]
+[% if skills %]
+
+%---------- SKILLS ----------
+\section{TECHNICAL SKILLS}
+\begin{itemize}[label={}, leftmargin=0in, itemsep=1pt]
+\small{
+[% for cat in skills %]
+  \item \textbf{[[ cat.label ]]}{: [[ cat["items"] | join(", ") ]]}
+[% endfor %]
+}
+\end{itemize}
+[% endif %]
+[% if achievements %]
+
+%---------- ACHIEVEMENTS ----------
+\section{ACHIEVEMENTS \& Awards}
+\begin{itemize}
+[% for a in achievements %]
+  \item \small{[[ a ]]}
+[% endfor %]
+\end{itemize}
+[% endif %]
+
+\end{document}

@@ -14,12 +14,13 @@ that data, not the read/write logic.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal, Optional
 from uuid import uuid4
-from pydantic import BaseModel, Field, field_validator
 
+from pydantic import BaseModel, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -101,6 +102,11 @@ class JobApplication(BaseModel):
     applied_date: Optional[datetime] = None
     last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     notes: Optional[str] = None
+    # job_hunter enrichments (all optional — backward compatible with existing rows)
+    job_url: Optional[str] = None
+    location: Optional[str] = None
+    jd_path: Optional[str] = None               # vault path to the saved job description
+    tailored_resume_path: Optional[str] = None  # vault path to the tailored resume for this JD
 
 
 class LearningPathEntry(BaseModel):
@@ -129,6 +135,60 @@ class ActiveLearningPath(BaseModel):
 # Topic Graph  (§5.5 of architecture)
 # ---------------------------------------------------------------------------
 
+class NodeAnchor(BaseModel):
+    """
+    Where one concept actually lives in an artifact — the bridge between a
+    curriculum node and the thing it teaches.
+
+    This is what makes a repo-derived curriculum *assessable*: the claim "this
+    node is about X" is only checkable because X sits at a specific file/symbol.
+    `orchestrator/memory/roadmap.py:verify_anchors()` resolves every anchor
+    against the workspace sandbox, so an anchor that does not resolve is caught
+    by code instead of being trusted from the model's prose. That resolution
+    ratio is the falsifiable signal the Repo-to-Curriculum plan (§5) asks for.
+
+    kind:
+      "file"     → the concept is embodied by this file as a whole
+      "symbol"   → a function/class/constant at `path` (optionally `line`)
+      "decision" → a design decision documented at `path`
+    """
+    kind: Literal["file", "symbol", "decision"] = "symbol"
+    path: str                                  # repo-relative, e.g. "orchestrator/memory/store.py"
+    symbol: Optional[str] = None               # e.g. "_get_embed_model"
+    line: Optional[int] = None
+    note: Optional[str] = None                 # why this anchor matters
+
+
+class NodeCheckpoint(BaseModel):
+    """
+    The per-node comprehension check — asked against the artifact, not the prose.
+
+    Phase D of the Repo-to-Curriculum plan. These fields exist from the start so
+    the manifest/note format never needs a second migration when assessment
+    lands: `evidence_ref` is filled by an assessment run (a memory id, a
+    transcript turn), and that reference is what feeds the learner model.
+    """
+    question: Optional[str] = None
+    rubric: Optional[str] = None
+    evidence_ref: Optional[str] = None
+
+
+class RoadmapSource(BaseModel):
+    """
+    Where a roadmap came from — the provenance that makes it re-derivable.
+
+    `kind="topic"` is today's behaviour (decomposed from a goal string).
+    `kind="repo"` is the Repo-to-Curriculum case: the concepts were extracted
+    from real code, so `commit` pins WHICH revision the curriculum describes
+    and `stopping_rule` records the boundary the extractor committed to
+    (comprehension vs authorship — see the blueprint's G3).
+    """
+    kind: Literal["topic", "repo"] = "topic"
+    path: Optional[str] = None                 # repo-relative for kind="repo"
+    commit: Optional[str] = None               # git sha the inventory was taken at
+    stopping_rule: Optional[str] = None        # "comprehension" | "authorship"
+
+
 class TopicNode(BaseModel):
     """
     One node in a Topic Graph — a single learnable skill or concept.
@@ -143,6 +203,13 @@ class TopicNode(BaseModel):
     the prerequisites list on read (a node is available once all its
     prerequisite nodes are "done"). Storing derived state invites drift;
     computing it on read keeps it always consistent.
+
+    A node's note in the vault has three ownership zones (see
+    `orchestrator/memory/roadmap.py`): the GENERATED tutorial body (the
+    specialist regenerates it), "🏫 Deepened in session" (the mentor appends,
+    never rewritten), and "My Notes" (the learner's; never touched). Only the
+    structural fields here — id, prerequisites, day, anchors, checkpoint —
+    are authoritative, and they live in the roadmap manifest.
     """
     id: str = Field(default_factory=lambda: uuid4().hex[:8])
     title: str
@@ -152,6 +219,13 @@ class TopicNode(BaseModel):
     resources: list[str] = Field(default_factory=list)        # URLs, book/course titles
     notes: Optional[str] = None
 
+    # --- Roadmap-store additions. All defaulted, so every note and stored
+    #     graph written before this existed parses unchanged. ---
+    day: Optional[int] = None
+    content_type: Optional[Literal["conceptual", "algorithmic", "hands_on_code", "reference"]] = None
+    anchors: list[NodeAnchor] = Field(default_factory=list)
+    checkpoint: Optional[NodeCheckpoint] = None
+
 
 class TopicGraph(BaseModel):
     """
@@ -160,11 +234,21 @@ class TopicGraph(BaseModel):
     Used by:
     - Daily Planner: to find available (unlocked) nodes and offer them as
       candidate plan items, linked via PlanItem.linked_goal.
-    - Learning Monitor: to mark nodes done when the user reports a topic
-      complete, which recomputes the frontier of available nodes.
+    - Learning Mentor: to mark nodes done when he reports a topic complete,
+      which recomputes the frontier of available nodes.
 
-    Persisted as a JSON blob in profile_facts under the key
-    "topic_graph_{topic_id}". One graph per major learning goal.
+    Persisted two ways, deliberately separated by ownership:
+      - **Vault manifest** (`<curriculum_root>/<graph_id>/roadmap.yaml`) — the
+        authoritative structure (identity, prerequisites, status, anchors,
+        provenance). Written and validated only by
+        `orchestrator/memory/roadmap.py`.
+      - **`profile_facts["topic_graphs"]`** — a cache for readers that have no
+        vault access.
+
+    This docstring previously claimed the graph was persisted under
+    `topic_graph_{topic_id}`; nothing ever wrote that key. The manifest is now
+    the single authoritative home, which is what lets the notes themselves be
+    safely hand-editable.
     """
     topic_id: str = Field(default_factory=lambda: uuid4().hex[:8])
     title: str                          # e.g. "AI Agent Systems & LangGraph"
@@ -172,6 +256,19 @@ class TopicGraph(BaseModel):
     version: int = 1
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # --- Roadmap-store additions (all defaulted; older graphs parse unchanged) ---
+    schema_version: int = 1             # manifest format version
+    source: RoadmapSource = Field(default_factory=RoadmapSource)
+    rel_path: Optional[str] = None      # e.g. "langgraph_basics" — the roadmap's folder
+    stopping_rule: Optional[str] = None # mirrors source.stopping_rule for easy filtering
+
+    # The declared time budget. Stored so the TIME PLAN can be checked rather
+    # than assumed: the live vault holds a "4-Day" roadmap whose nodes sum to 22
+    # hours, i.e. 5.5h/day against a ~3h/day intent, and nothing ever noticed.
+    # Only `roadmap.allocate_days()` may assign `day` values from these.
+    target_days: Optional[int] = None
+    hours_per_day: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +329,7 @@ class DailyPlan(BaseModel):
     """
     date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    generated_by: str = "daily_planner"
+    generated_by: str = "orchestrator"
     energy_level_assumed: Optional[int] = None
     total_available_minutes: Optional[int] = None
 
@@ -245,6 +342,26 @@ class DailyPlan(BaseModel):
     version: int = 1
     reflection: Optional[str] = None   # end-of-day review note
     notes: Optional[str] = None
+
+
+class ScheduleEvent(BaseModel):
+    """
+    Generic calendar schedule event stored in PostgreSQL.
+    Supports read, create, update, delete operations by the Daily Coach agent.
+    """
+    id: str = Field(default_factory=lambda: uuid4().hex[:8])
+    title: str
+    category: str = "learning"
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    duration_min: int = 30
+    status: Literal["scheduled", "in_progress", "completed", "cancelled", "postponed"] = "scheduled"
+    priority: Literal["must", "should", "nice-to-have"] = "should"
+    linked_goal: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
 
 
 class LearningLogEntry(BaseModel):
@@ -340,8 +457,9 @@ class DNAMemory(BaseModel):
     # (topic_graph_{id}) and loaded dynamically by the memory manager,
     # not embedded here (they can be large and are graph-structured).
 
-    # planning
+    # planning & schedule
     daily_plans: list[DailyPlan] = Field(default_factory=list)
+    schedule_events: list[ScheduleEvent] = Field(default_factory=list)
 
     # preferences & system
     preferences: Preferences = Field(default_factory=Preferences)
@@ -378,8 +496,8 @@ class MemorySlice(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     relevant_profile: dict[str, Any] = Field(default_factory=dict)
-    # daily_planner:    {"topic_graphs": [...], "energy_level": 4, "projects": [...]}
-    # learning_monitor: {"active_learning_path": {...}, "topic_graphs": [...], "learning_log": [...]}
+    # planner skill:   {"topic_graphs": [...], "energy_level": 4, "projects": [...]}
+    # learner skill:   {"active_learning_path": {...}, "topic_graphs": [...], "learning_log": [...]}
     # linkedin_writer:  {"projects": [...], "tone": "...", "recent_post_topics": [...]}
 
     recent_activity: list[ActivityLogEntry] = Field(default_factory=list)

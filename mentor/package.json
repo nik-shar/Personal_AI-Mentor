@@ -1,0 +1,14 @@
+{
+  "name": "mentor-pi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mentor ecosystem on top of the PI agent harness: identity, sidecar bridge tools, guardrails.",
+  "type": "module",
+  "pi": {
+    "extensions": ["./extensions"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}

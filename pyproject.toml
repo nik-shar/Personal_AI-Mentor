@@ -1,22 +1,21 @@
 [project]
-name = "ai"
+name = "personal-ai-mentor"
 version = "0.1.0"
-description = "Add your description here"
+description = "Local-first personal AI mentor: a Python memory/domain layer behind a PI agent core."
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.12"
 dependencies = [
+    "apscheduler>=3.11.3",
     "ddgs>=8.0.0",
-    "faiss-cpu>=1.14.3",
+    "fastapi>=0.110.0",
     "langchain>=1.3.11",
     "langchain-chroma>=1.1.0",
     "langchain-community>=0.4.2",
     "langchain-core>=1.4.8",
-    "langchain-groq>=1.1.3",
     "langchain-huggingface>=1.2.2",
-    "langchain-nvidia-ai-endpoints>=1.4.3",
     "langchain-openai>=1.3.3",
     "langchain-tavily>=0.2.18",
-    "langchain-text-splitters>=1.1.2",
     "langgraph>=1.2.7",
     "langgraph-checkpoint-sqlite>=3.1.0",
     "networkx>=3.6.1",
@@ -25,9 +24,54 @@ dependencies = [
     "pydantic>=2.13.4",
     "pypdf>=6.14.2",
     "python-dotenv>=1.2.2",
+    "requests>=2.32.0",
     "sentence-transformers>=5.6.0",
-    "streamlit>=1.58.0",
     "tavily>=1.1.0",
-    "fastapi>=0.110.0",
     "uvicorn>=0.28.0",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.1",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+
+# ---------------------------------------------------------------------------
+# Tooling
+#
+# Lint standard. The deliberate `ignore` list documents existing debt rather
+# than hiding it: BLE001 (broad excepts) and the annotation/timezone
+# modernisations are part of this codebase's established style — broad
+# fail-open excepts are load-bearing here (a broken tool must never crash a
+# turn). Run:  uv run ruff check .
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = [".venv", "pi", "web", "chroma_store", "data"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+ignore = [
+    "E402",  # imports after a sys.path preamble / deliberate lazy imports
+    "E701",  # `if x: return y` one-liners: established style
+    "F841",  # unused locals: removal can drop side-effecting calls — review by hand
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pyright]
+include = ["orchestrator", "agents", "api", "schemas", "scheduler", "integrations"]
+exclude = [".venv", "pi", "web", "chroma_store", "data", "scripts"]
+typeCheckingMode = "basic"
+reportMissingImports = "warning"

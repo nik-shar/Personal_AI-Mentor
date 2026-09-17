@@ -115,10 +115,15 @@ Currently registered agents:
 
 | `agent_name` | Entry point | Task types |
 |---|---|---|
-| `daily_planner` | `run_daily_planner` | `build_daily_plan` |
-| `learning_monitor` | `run_learning_monitor` | `log_learning_session` |
 | `linkedin_writer` | `run_linkedin_writer` | `write_linkedin_post` |
+| `goal_decomposer` | `run_goal_decomposer` | `decompose_goal` |
+| `job_hunter` | `run_job_hunter` | `tailor_resume`, `log_application`, `update_application_status`, `job_search_review`, `assess_fit`, `search_jobs` |
 | `fallback` | inline handler | `direct_response` |
+
+> Daily planning and learning logging were absorbed into the orchestrator as skills
+> (`orchestrator/harness.py` tools: `save_daily_plan`, `log_learning_session`,
+> `trim_plan_to_fit`, `compute_learning_streak`). They are handled by
+> `direct_response_node`, not by a registered sub-agent.
 
 ---
 
@@ -157,7 +162,8 @@ print(state["response_text"])
 | `runner.py` | Thin backward-compat wrapper (`OrchestratorRunner` class) |
 | `registry.py` | Agent registry — `get_agent_spec()`, `AgentSpec` |
 | `config.py` | DB URL, embedding dimension, routing hints, agent context schemas, profile key map |
-| `llm.py` | Shared `get_reasoning_llm()` factory |
+| `llm.py` | Shared LLM factory functions — `get_reasoning_llm`, `get_conversational_llm`, `get_writer_llm` |
+| `harness.py` | Manager tool harness — deterministic computation tools (streak, trim, DAG traversal) + fail-open tool-calling loop + situation-facts assembler |
 | `__main__.py` | `python -m orchestrator` interactive CLI |
 | `memory/` | Three-tier memory service (see `memory/architecture.md`) |
 | `nodes/` | Pure helper functions used as graph node implementations |

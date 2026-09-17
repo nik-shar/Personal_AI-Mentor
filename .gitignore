@@ -13,6 +13,16 @@ chroma_store/
 *.db
 *.sqlite
 *.sqlite3
+data/checkpoints.sqlite*
+
+# Generated memory artifacts (regenerate anytime)
+data/memory.md
+data/memory_backups/
+memory.json
+
+# Roadmap store: recoverable deletions land here (`delete_roadmap` moves a folder
+# in rather than unlinking it). Local-only — never committed.
+learning/topics/.trash/
 
 # Python-generated & build files
 __pycache__/
@@ -24,6 +34,7 @@ dist/
 wheels/
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 
@@ -36,27 +47,28 @@ env/
 # IDE & Editor files
 .vscode/
 .idea/
+.zed/
 *.swp
 *.swo
 .DS_Store
 Thumbs.db
-scripts/test_other_keys.py
-scripts/test_4_bugs_fixed.py
-scripts/test_deep_tutorial_generator.py
-scripts/test_nebius.py
-scripts/test_nvidia_direct.py
 
 # Personal files & artifacts
 *.pdf
 about_me.md
 challenges.md
 profile.yaml
-CLAUDE.md
-
-
 
 # Obsidian local settings (if applicable)
 .obsidian/
 
 # Log files
 *.log
+
+# Node / Next.js
+node_modules/
+
+# Vendored Pi agent harness — a separate upstream git repo
+# (github.com/earendil-works/pi). Never commit into this repo: it would
+# create an embedded repo / huge gitlink. Run it from ./pi via ./pi-test.sh.
+pi/

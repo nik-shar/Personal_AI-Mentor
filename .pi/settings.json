@@ -1,0 +1,9 @@
+{
+  "defaultProvider": "nebius",
+  "defaultModel": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+  "defaultThinkingLevel": "medium",
+  "defaultProjectTrust": "always",
+  "extensions": ["../mentor/extensions"],
+  "skills": ["../mentor/skills"],
+  "enableSkillCommands": true
+}

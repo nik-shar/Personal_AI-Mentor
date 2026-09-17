@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
+
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
+from langchain_huggingface import HuggingFaceEmbeddings
 
 PERSIST_DIR = "chroma_store/linkedin_voice"
 POSTS_DIR = Path("data/past_linkedin_posts")  # one .txt file per past post

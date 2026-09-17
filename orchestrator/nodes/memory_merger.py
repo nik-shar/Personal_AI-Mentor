@@ -6,15 +6,16 @@ tier of the Postgres-backed memory store.
 """
 
 from __future__ import annotations
+
 from datetime import date, datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel
 
-from schemas import AgentResult
-
 from orchestrator.config import EPISODIC_DELTA_KEYS, PROFILE_KEY_MAP
 from orchestrator.memory.store import MemoryManager
+from orchestrator.tracing import traced
+from schemas import AgentResult
 
 
 def _json_safe(value: Any) -> Any:
@@ -84,6 +85,7 @@ def _summarize_event(event_type: str, payload: dict[str, Any]) -> str:
     return str(payload)
 
 
+@traced("memory_merger")
 def apply_memory_delta(
     memory_manager: MemoryManager,
     result: AgentResult,
@@ -116,22 +118,11 @@ def apply_memory_delta(
             if isinstance(data, dict):
                 memory_manager.set_private_memory(agent_name, data)
 
-    # 4. Always append a meta event recording that this agent ran.
-    memory_manager.add_episodic_event(
-        source_agent="orchestrator",
-        event_type="agent_run",
-        content=f"{result.agent_name} ran task {result.task_type} with status {result.status.value}.",
-        payload=_json_safe({
-            "agent_name": result.agent_name,
-            "task_type": result.task_type,
-            "task_id": result.task_id,
-            "status": result.status.value,
-            "output_preview": (result.output or "")[:500],
-        }),
-        tags=["agent_run", result.agent_name, result.status.value],
-        importance=3,
-        occurred_at=result.completed_at or datetime.now(timezone.utc),
-    )
+    # 4. (Removed) The per-run `agent_run` meta-event used to be appended here.
+    #    It was pure bookkeeping that dominated the episodic store (174 of 462
+    #    rows) with zero semantic value — consolidator and daily-summary already
+    #    skip it. Real content (daily_plan, job_application, learning_session,
+    #    linkedin_draft, mood_note) still flows through EPISODIC_DELTA_KEYS above.
 
 
 def _write_episodic_values(

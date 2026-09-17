@@ -18,9 +18,10 @@ of one subgraph execution.
 """
 
 from __future__ import annotations
-from typing import TypedDict, Optional
 
-from schemas import AgentTask, AgentResult, DraftSuggestion
+from typing import Optional, TypedDict
+
+from schemas import AgentResult, AgentTask, DraftSuggestion
 
 
 class LinkedInWriterState(TypedDict):

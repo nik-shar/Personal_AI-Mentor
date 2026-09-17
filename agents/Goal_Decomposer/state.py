@@ -7,10 +7,10 @@ LangGraph State for the Goal Decomposer specialist agent.
 from __future__ import annotations
 
 from typing import Any, Literal, Optional, TypedDict
+
 from pydantic import BaseModel, Field
 
 from schemas import AgentResult, AgentTask, ResultStatus
-
 
 # ---------------------------------------------------------------------------
 # Structured Output Pydantic Schemas for LLM
@@ -98,7 +98,7 @@ class GoalDecomposerState(TypedDict):
     task: AgentTask
 
     raw_instructions: str
-    action_type: Literal["create", "edit", "delete", "list"]
+    action_type: Literal["create", "edit", "delete", "list", "tutorial"]
     target_graph_id: Optional[str]
     target_node_id: Optional[str]
     edit_payload: Optional[dict[str, Any]]
@@ -120,6 +120,11 @@ class GoalDecomposerState(TypedDict):
     feedback_message: str
     memory_delta: dict[str, Any]
     result: Optional[AgentResult]
+
+    # The time-budget verdict from `roadmap.allocate_days` — code-owned, so the
+    # response can state whether the topics actually fit the requested days ×
+    # hours/day instead of presenting a 22-hour "4-day" plan as if it fit.
+    budget: dict[str, Any]
 
 
 def build_initial_state(task: AgentTask) -> GoalDecomposerState:
@@ -145,6 +150,7 @@ def build_initial_state(task: AgentTask) -> GoalDecomposerState:
         index_file_path="",
         feedback_message="",
         memory_delta={},
+        budget={},
         result=None,
     )
 

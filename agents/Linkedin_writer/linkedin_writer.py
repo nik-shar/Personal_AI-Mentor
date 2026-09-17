@@ -1,11 +1,16 @@
-import os
 import unicodedata
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode
-from langchain_tavily import TavilySearch
+
 from dotenv import load_dotenv
-from agents.Linkedin_writer.State import LinkedInWriterState, build_result, build_initial_state
+from langchain_tavily import TavilySearch
+from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import ToolNode
+
 from agents.Linkedin_writer.RAG import _load_or_build_vectorstore
+from agents.Linkedin_writer.State import (
+    LinkedInWriterState,
+    build_initial_state,
+    build_result,
+)
 from schemas import AgentResult, AgentTask, ResultStatus, TaskSource
 from schemas.memory import MemorySlice
 
@@ -15,11 +20,13 @@ search_tool = TavilySearch(max_results=3)
 tools = [search_tool]
 
 from orchestrator.llm import get_writer_llm
+from orchestrator.tracing import component, component_span
 
 llm = get_writer_llm(temperature=0.4)
 llm_with_tools = llm.bind_tools(tools)
 tool_node = ToolNode(tools)
 
+@component_span("linkedin:input_brief", tags=["component:linkedin:input_brief"])
 def input_brief(state: LinkedInWriterState) -> dict:
     """
     Unpacks the incoming AgentTask into flat topic/goal/audience fields
@@ -60,6 +67,7 @@ def input_brief(state: LinkedInWriterState) -> dict:
 
 
 from integrations.search import perform_web_search
+
 
 def web_search_node(state: LinkedInWriterState) -> dict:
     """
@@ -155,6 +163,7 @@ def voice_style_node(state: LinkedInWriterState) -> dict:
     return {"style_notes": style_notes}
 
 
+@component_span("linkedin:draft_writer", tags=["component:linkedin:draft_writer"])
 def draft_writer_node(state: LinkedInWriterState) -> dict:
     """
     Writes (or revises) the LinkedIn post draft, grounded in distilled research
@@ -277,6 +286,7 @@ def draft_writer_node(state: LinkedInWriterState) -> dict:
 MAX_REVISIONS = 3
 
 
+@component_span("linkedin:critic", tags=["component:linkedin:critic"])
 def critic_node(state: LinkedInWriterState) -> dict:
     """
     Reviews the current draft against the original brief and style rules.
@@ -490,8 +500,13 @@ def run_linkedin_writer(task: AgentTask) -> AgentResult:
     Takes the orchestrator's AgentTask, seeds the internal LangGraph state,
     invokes the compiled graph, and returns the packaged AgentResult.
     """
-    initial_state = build_initial_state(task)
-    final_state = app.invoke(initial_state)
+    with component(
+        f"agent:{task.agent_name}",
+        tags=[f"agent:{task.agent_name}", f"task:{task.task_type}"],
+        metadata={"agent_name": task.agent_name, "task_type": task.task_type},
+    ):
+        initial_state = build_initial_state(task)
+        final_state = app.invoke(initial_state)
     result = final_state.get("result")
     if result is None:
         # Defensive fallback: the graph should always populate result, but

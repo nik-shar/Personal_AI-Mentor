@@ -10,6 +10,16 @@ no I/O. If it starts growing helper functions, that's a signal they belong
 in a different module (e.g. a schemas/utils.py or the orchestrator itself).
 """
 
+from .agent_io import (
+    AgentResult,
+    AgentResultBatch,
+    AgentTask,
+    AgentTaskBatch,
+    DraftSuggestion,
+    ResultStatus,
+    TaskPriority,
+    TaskSource,
+)
 from .memory import (
     ActiveLearningPath,
     ActivityLogEntry,
@@ -22,27 +32,20 @@ from .memory import (
     LearningPathEntry,
     MemorySlice,
     MindsetCalibration,
+    NodeAnchor,
+    NodeCheckpoint,
     PlanItem,
     PlanTask,
     Preferences,
     ProceduralRule,
     Project,
     ProjectStatus,
+    RoadmapSource,
+    ScheduleEvent,
     SkillRating,
     SystemFlags,
     TopicGraph,
     TopicNode,
-)
-
-from .agent_io import (
-    AgentTask,
-    AgentResult,
-    AgentTaskBatch,
-    AgentResultBatch,
-    DraftSuggestion,
-    TaskSource,
-    TaskPriority,
-    ResultStatus,
 )
 
 __all__ = [
@@ -58,12 +61,16 @@ __all__ = [
     "LearningPathEntry",
     "MemorySlice",
     "MindsetCalibration",
+    "NodeAnchor",
+    "NodeCheckpoint",
     "PlanItem",
     "PlanTask",
     "Preferences",
     "ProceduralRule",
     "Project",
     "ProjectStatus",
+    "RoadmapSource",
+    "ScheduleEvent",
     "SkillRating",
     "SystemFlags",
     "TopicGraph",

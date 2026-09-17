@@ -23,7 +23,6 @@ from typing import Optional
 
 from orchestrator.memory.store import MemoryManager, _get_embed_model
 
-
 # How many older memories to surface per RAG call.
 _RECALL_LIMIT = 5
 

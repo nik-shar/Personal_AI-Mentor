@@ -26,7 +26,7 @@ Three-stage pipeline:
 
 from __future__ import annotations
 
-import os
+import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -34,8 +34,9 @@ from typing import Any
 from dotenv import load_dotenv
 from sqlalchemy import text
 
-from orchestrator.config import DB_URL, PROFILE_KEY_MAP
-from orchestrator.memory.store import MemoryManager, _get_embed_model
+from orchestrator.config import PROFILE_KEY_MAP
+from orchestrator.memory.store import MemoryManager
+from orchestrator.tracing import component_span
 
 load_dotenv()
 
@@ -55,11 +56,37 @@ ARCHIVE_AGE_DAYS = 35
 _SKIP_EVENT_TYPES = {"agent_run"}
 
 
-from orchestrator.llm import get_reasoning_llm
+from orchestrator.llm import get_reflection_llm
 
 
 def _get_llm():
-    return get_reasoning_llm(temperature=0.1)
+    return get_reflection_llm(temperature=0.1)
+
+
+# Profile keys that MUST hold an integer — a boolean 'true'/'false' from the
+# LLM's extracted JSON would silently corrupt the field (observed: the weekly
+# job wrote learning_streak_days=true). Stage 3 drops anything that doesn't fit.
+_INT_KEYS = {"energy_level", "learning_streak_days", "leetcode_rating"}
+
+
+def _sanitize_fact_value(key: str, value: Any) -> Any:
+    """
+    Coerce/validate a promoted fact's value. Returns None to drop the fact.
+    - int keys: reject booleans, coerce numeric strings, keep ints.
+    - list keys: reject scalars.
+    - everything else passes through.
+    """
+    if key in _INT_KEYS:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            return int(value)
+        return None
+    if key in {"skills", "projects", "target_roles", "target_locations", "degrees", "preferences"} and not isinstance(value, (list, dict)):
+        return None
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +133,7 @@ class MemoryConsolidator:
     # Stage 1: Weekly consolidation
     # -----------------------------------------------------------------------
 
+    @component_span("consolidation_weekly", tags=["component:consolidation_weekly"])
     def _stage1_weekly(self) -> dict[str, Any]:
         """
         Consolidate events older than CONSOLIDATION_AGE_DAYS into weekly
@@ -213,6 +241,7 @@ class MemoryConsolidator:
     # Stage 2: Monthly consolidation
     # -----------------------------------------------------------------------
 
+    @component_span("consolidation_monthly", tags=["component:consolidation_monthly"])
     def _stage2_monthly(self) -> dict[str, Any]:
         """
         Compress weekly_summary events older than ARCHIVE_AGE_DAYS into
@@ -288,6 +317,7 @@ class MemoryConsolidator:
             "weeklies_archived": weeklies_archived,
         }
 
+    @component_span("consolidation_monthly_llm", tags=["component:consolidation_monthly_llm"])
     def _summarise_month(self, month_key: str, rows: list) -> str:
         """Compress weekly summaries into a single monthly abstract."""
         weeklies_block = "\n\n".join(
@@ -312,6 +342,7 @@ class MemoryConsolidator:
     # Stage 3: Fact extraction → profile_facts
     # -----------------------------------------------------------------------
 
+    @component_span("consolidation_facts", tags=["component:consolidation_facts"])
     def _stage3_extract_facts(self) -> dict[str, Any]:
         """
         Scan recent monthly_summary events for stable facts that should be
@@ -350,11 +381,12 @@ class MemoryConsolidator:
             updated_payload = dict(row.payload or {})
             updated_payload["facts_extracted"] = "true"
             with self._mm._session() as session:
+                # psycopg2 cannot adapt a raw dict to JSONB — serialize first.
                 session.execute(
                     text(
-                        "UPDATE episodic_events SET payload = :p WHERE id = :id"
+                        "UPDATE episodic_events SET payload = CAST(:p AS jsonb) WHERE id = :id"
                     ),
-                    {"p": updated_payload, "id": row.id},
+                    {"p": json.dumps(updated_payload), "id": row.id},
                 )
             summaries_processed += 1
 
@@ -363,6 +395,7 @@ class MemoryConsolidator:
             "facts_extracted":     total_facts,
         }
 
+    @component_span("consolidation_facts_llm", tags=["component:consolidation_facts_llm"])
     def _extract_facts_from_summary(self, summary: str) -> dict[str, Any]:
         """
         Ask the LLM to pull out any stable facts from a monthly summary that
@@ -391,8 +424,16 @@ class MemoryConsolidator:
             facts = json.loads(raw)
             if not isinstance(facts, dict):
                 return {}
-            # Only keep keys that are in PROFILE_KEY_MAP.
-            return {k: v for k, v in facts.items() if k in PROFILE_KEY_MAP}
+            # Only keep keys that are in PROFILE_KEY_MAP, with type-safe values
+            # (a boolean must never overwrite an integer field like the streak).
+            cleaned: dict[str, Any] = {}
+            for k, v in facts.items():
+                if k not in PROFILE_KEY_MAP:
+                    continue
+                safe = _sanitize_fact_value(k, v)
+                if safe is not None:
+                    cleaned[k] = safe
+            return cleaned
         except Exception as exc:
             print(f"[Stage 3] Fact extraction LLM call failed: {exc}")
             return {}

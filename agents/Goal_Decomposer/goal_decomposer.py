@@ -8,33 +8,41 @@ structured, dependency-aware Topic Graphs saved directly as Markdown files in Ob
 from __future__ import annotations
 
 import re
-import uuid
-from typing import Any, Literal
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Literal
+
 from langgraph.graph import END, START, StateGraph
 
-from schemas import AgentResult, AgentTask, ResultStatus
-from orchestrator.config import OBSIDIAN_VAULT_PATH, OBSIDIAN_TOPIC_FOLDER
-from orchestrator.llm import get_reasoning_llm
-from orchestrator.memory.obsidian_graph import (
-    write_topic_node,
-    write_roadmap_index,
-)
-from integrations.search import perform_web_search
-from schemas.memory import TopicNode
 from agents.Goal_Decomposer.state import (
-    ConceptualContent,
     AlgorithmicContent,
-    HandsOnCodeContent,
-    ReferenceContent,
+    ConceptualContent,
+    GoalDecomposerState,
     GoalDecompositionOutline,
     GoalDecompositionSpec,
-    GoalDecomposerState,
+    HandsOnCodeContent,
+    ReferenceContent,
     SubTopicOutline,
     SubTopicSpec,
     build_initial_state,
-    build_result,
 )
+from integrations.search import perform_web_search
+from orchestrator.config import MENTOR_CURRICULUM_PATH
+from orchestrator.memory.roadmap import (
+    add_node,
+    allocate_days,
+    delete_node,
+    delete_roadmap,
+    find_node_anywhere,
+    find_roadmap_any,
+    list_roadmaps,
+    render_pedagogical_body,
+    roadmap_summaries,
+    update_node,
+    write_roadmap,
+)
+from orchestrator.tracing import component, component_span
+from schemas import AgentResult, AgentTask, ResultStatus
+from schemas.memory import RoadmapSource, TopicGraph, TopicNode
 
 
 def slugify(text: str) -> str:
@@ -44,26 +52,52 @@ def slugify(text: str) -> str:
 
 def validate_tutorial_quality(markdown_text: str) -> tuple[bool, str]:
     """
-    Validate that generated tutorial Markdown is complete, meets minimum depth requirements,
-    and does not contain lazy placeholders like '...' or 'TODO'.
+    Validate that generated tutorial Markdown is complete, meets minimum depth
+    requirements, and does not contain lazy placeholders like '...' or 'TODO'.
+
+    The mechanical standard (min_length / min_headings / banned_placeholders)
+    comes from the tutorial-writer toolkit's guardrails `rules:` block — the
+    single source of truth — with code-side defaults as the fail-open floor.
     """
+    rules: dict = {
+        "min_length": 800,
+        "min_headings": 2,
+        "banned_placeholders": ["...", "TODO", "TBD", "lorem"],
+    }
+    try:
+        from orchestrator.toolkits import load_guardrail_rules
+        tk_rules = load_guardrail_rules("tutorial-writer") or {}
+        if tk_rules.get("min_length") is not None:
+            rules["min_length"] = int(tk_rules["min_length"])
+        if tk_rules.get("min_headings") is not None:
+            rules["min_headings"] = int(tk_rules["min_headings"])
+        if tk_rules.get("banned_placeholders"):
+            rules["banned_placeholders"] = [str(p) for p in tk_rules["banned_placeholders"]]
+    except Exception as exc:
+        print(f"[goal_decomposer] toolkit rules unavailable ({exc}) — using defaults.")
+
     if not markdown_text or not isinstance(markdown_text, str):
         return False, "Empty or non-string response."
 
     cleaned = markdown_text.strip()
-    
-    # 1. Length check: Must be at least 800 characters
-    if len(cleaned) < 800:
-        return False, f"Content too brief ({len(cleaned)} chars, minimum 800)."
 
-    # 2. Lazy placeholder check: Match standalone '...' or 'TODO' / 'TBD'
-    if re.search(r"(\n\s*\.\.\.\s*\n|\n\s*TODO|\n\s*TBD)", cleaned, re.IGNORECASE) or re.search(r"^#+ [^\n]+\n\s*\.\.\.", cleaned, re.MULTILINE):
-        return False, "Contains lazy '...' or 'TODO' placeholders."
+    # 1. Length check: must be at least the toolkit's min_length
+    if len(cleaned) < int(rules["min_length"]):
+        return False, f"Content too brief ({len(cleaned)} chars, minimum {rules['min_length']})."
 
-    # 3. Minimum structural headings check (at least 2 markdown headings)
+    # 2. Lazy placeholder check: standalone '...' or banned placeholders
+    banned = [str(p).strip() for p in (rules["banned_placeholders"] or []) if str(p).strip()]
+    for token in banned:
+        if token in ("...",):
+            if re.search(r"\n\s*\.\.\.\s*\n", cleaned) or re.search(r"^#+ [^\n]+\n\s*\.\.\.", cleaned, re.MULTILINE):
+                return False, f"Contains lazy '{token}' placeholder."
+        elif re.search(rf"(^|\s|\n)#?{re.escape(token)}\b", cleaned, re.IGNORECASE):
+            return False, f"Contains banned placeholder '{token}'."
+
+    # 3. Minimum structural headings check (at least min_headings headings)
     headings = re.findall(r"^#{1,3}\s+.+", cleaned, re.MULTILINE)
-    if len(headings) < 2:
-        return False, f"Insufficient structural headings ({len(headings)} found)."
+    if len(headings) < int(rules["min_headings"]):
+        return False, f"Insufficient structural headings ({len(headings)} found, minimum {rules['min_headings']})."
 
     return True, "OK"
 
@@ -171,7 +205,7 @@ def input_parser(state: GoalDecomposerState) -> dict:
     action_type = params.get("action_type") or "create"
 
     # Intent detection from raw instructions
-    if any(k in raw_lower for k in ("list roadmap", "list vault", "show roadmap", "show vault", "list my graph", "view roadmaps")):
+    if any(k in raw_lower for k in ("list roadmap", "list vault", "show roadmap", "show vault", "list my graph", "view roadmaps", "any prebuilt", "existing roadmap", "what roadmaps", "what do i have", "execute a list action")):
         action_type = "list"
     elif any(k in raw_lower for k in ("delete roadmap", "remove roadmap", "delete graph", "remove graph", "delete topic", "remove topic")):
         action_type = "delete"
@@ -205,6 +239,31 @@ def input_parser(state: GoalDecomposerState) -> dict:
     goal_topic = params.get("topic") or raw
     if "The user requested:" in goal_topic:
         goal_topic = goal_topic.split("The user requested:")[-1].strip().strip('"').strip("'")
+
+    # Tutorial mode: a direct command to write one deep tutorial/note on a
+    # topic (with the mentor's emphasis context) — no roadmap decomposition
+    # unless the decompose step decides a split actually helps.
+    _TUTORIAL_SIGNALS = (
+        "write a tutorial", "write tutorial", "tutorial on", "tutorial for",
+        "full tutorial", "deep dive on", "deep note on", "study note on",
+        "explain to me", "make a note on",
+    )
+    if params.get("mode") == "tutorial" or task.task_type == "write_tutorial" or (action_type == "create" and any(sig in raw_lower for sig in _TUTORIAL_SIGNALS)):
+        action_type = "tutorial"
+
+    if action_type == "tutorial":
+        # Strip the command prefix so goal_topic is the actual subject
+        # (operating on the extracted user message, not the wrapped envelope).
+        topic_lower = goal_topic.lower()
+        for prefix in ("write a tutorial on", "write a tutorial for", "write tutorial on",
+                       "write tutorial for", "full tutorial on", "deep dive on",
+                       "deep note on", "study note on", "explain to me",
+                       "make a note on", "tutorial on", "tutorial for"):
+            if topic_lower.startswith(prefix):
+                goal_topic = goal_topic[len(prefix):].strip().strip('"').strip("'") or goal_topic
+                break
+        if not target_days:
+            target_days = 1  # single-topic tutorials don't need a roadmap timeframe
 
     target_graph_id = params.get("graph_id") or params.get("target_graph")
     target_node_id = params.get("node_id") or params.get("target_node")
@@ -245,17 +304,19 @@ def clarify_timeframe_node(state: GoalDecomposerState) -> dict:
 
 
 def list_vault_node(state: GoalDecomposerState) -> dict:
-    """List all available roadmaps in the vault with node counts and progress."""
-    from orchestrator.memory.obsidian_graph import list_vault_roadmaps
-    roadmaps = list_vault_roadmaps(OBSIDIAN_VAULT_PATH, OBSIDIAN_TOPIC_FOLDER)
+    """List all roadmaps in the curriculum with node counts and progress."""
+    roadmaps = roadmap_summaries(MENTOR_CURRICULUM_PATH)
 
     if not roadmaps:
-        msg = f"📂 **Vault is currently empty.** No learning roadmaps found in `{OBSIDIAN_VAULT_PATH}/{OBSIDIAN_TOPIC_FOLDER}`.\n\nSay *'Create a 3-day roadmap for [topic]'* to get started!"
+        msg = (
+            f"📂 **No roadmaps yet.** Nothing found in `{MENTOR_CURRICULUM_PATH}`.\n\n"
+            "Say *'Create a 3-day roadmap for [topic]'* to get started!"
+        )
         return {"feedback_message": msg, "written_files": [], "memory_delta": {}}
 
     lines = [
-        f"🗺️ **Obsidian Vault Roadmaps ({len(roadmaps)} found):**",
-        f"Location: `{OBSIDIAN_VAULT_PATH}/{OBSIDIAN_TOPIC_FOLDER}`",
+        f"🗺️ **Your Roadmaps ({len(roadmaps)} found):**",
+        f"Location: `{MENTOR_CURRICULUM_PATH}`",
         "",
     ]
     for r in roadmaps:
@@ -277,98 +338,129 @@ def list_vault_node(state: GoalDecomposerState) -> dict:
 
 
 def delete_vault_node(state: GoalDecomposerState) -> dict:
-    """Delete a topic graph or single node from the vault."""
-    from orchestrator.memory.obsidian_graph import delete_topic_graph, delete_topic_node, load_topic_graphs
+    """Delete a roadmap or a single node from the curriculum.
 
+    Resolution is exact (graph_id, then exact title). The old path matched
+    substrings across the whole vault, so a short target could take out the wrong
+    roadmap or an arbitrary note.
+    """
     target = state.get("target_graph_id") or state.get("goal_topic") or ""
 
-    ok, count, deleted_files = delete_topic_graph(OBSIDIAN_VAULT_PATH, OBSIDIAN_TOPIC_FOLDER, target)
-    if ok:
-        msg = f"🗑️ **Deleted Roadmap '{target}' from Obsidian Vault.**\nRemoved {count} file(s): {', '.join(deleted_files)}"
-        remaining_graphs = load_topic_graphs(OBSIDIAN_VAULT_PATH, OBSIDIAN_TOPIC_FOLDER)
-        memory_delta = {
-            "topic_graphs": [g.model_dump(mode="json") for g in remaining_graphs],
-            "activity_log": [f"Deleted topic graph '{target}' from Obsidian vault."],
-        }
-        return {
-            "feedback_message": msg,
-            "written_files": ["deleted"],
-            "memory_delta": memory_delta,
-        }
+    graph = find_roadmap_any(MENTOR_CURRICULUM_PATH, target)
+    if graph is not None:
+        ok, msg = delete_roadmap(MENTOR_CURRICULUM_PATH, graph.topic_id)
+        if ok:
+            remaining = list_roadmaps(MENTOR_CURRICULUM_PATH)
+            return {
+                "feedback_message": f"🗑️ **{msg}**",
+                "written_files": ["deleted"],
+                "memory_delta": {
+                    "topic_graphs": [g.model_dump(mode="json") for g in remaining],
+                    "activity_log": [f"Deleted roadmap '{graph.title}'."],
+                },
+            }
 
-    ok_node, node_msg = delete_topic_node(OBSIDIAN_VAULT_PATH, OBSIDIAN_TOPIC_FOLDER, target)
-    if ok_node:
-        remaining_graphs = load_topic_graphs(OBSIDIAN_VAULT_PATH, OBSIDIAN_TOPIC_FOLDER)
-        memory_delta = {
-            "topic_graphs": [g.model_dump(mode="json") for g in remaining_graphs],
-            "activity_log": [node_msg],
-        }
-        return {
-            "feedback_message": f"🗑️ **{node_msg}**",
-            "written_files": ["deleted"],
-            "memory_delta": memory_delta,
-        }
+    hit = find_node_anywhere(MENTOR_CURRICULUM_PATH, target)
+    if hit is not None:
+        graph_id, node = hit
+        ok_node, node_msg = delete_node(MENTOR_CURRICULUM_PATH, graph_id, node.id)
+        if ok_node:
+            remaining = list_roadmaps(MENTOR_CURRICULUM_PATH)
+            return {
+                "feedback_message": f"🗑️ **{node_msg}**",
+                "written_files": ["deleted"],
+                "memory_delta": {
+                    "topic_graphs": [g.model_dump(mode="json") for g in remaining],
+                    "activity_log": [node_msg],
+                },
+            }
 
-    msg = f"⚠️ Could not find roadmap or node matching '{target}' in vault `{OBSIDIAN_VAULT_PATH}/{OBSIDIAN_TOPIC_FOLDER}`."
+    msg = (
+        f"⚠️ Nothing exactly matching '{target}' exists in `{MENTOR_CURRICULUM_PATH}`. "
+        "I don't guess at near-matches for deletes — give me the exact roadmap or node name."
+    )
     return {"feedback_message": msg, "written_files": [], "memory_delta": {}}
 
 
 def edit_vault_node(state: GoalDecomposerState) -> dict:
-    """Edit node properties or add a new subtopic node to an existing roadmap."""
-    from orchestrator.memory.obsidian_graph import edit_topic_node, write_topic_node, load_topic_graphs, _regenerate_roadmap_index
+    """Edit a node's structure, or add a new subtopic node to an existing roadmap.
 
+    Structural edits go through the store's DAG-checked mutators. The old path
+    rewrote note files directly and never called the cycle-checking API in
+    `memory/topic_graph.py`, so an edit could silently make the prerequisite graph
+    inconsistent.
+    """
     target = state.get("target_graph_id") or state.get("goal_topic") or ""
     payload = state.get("edit_payload") or {}
+    graph = find_roadmap_any(MENTOR_CURRICULUM_PATH, target)
+    if graph is None:
+        known = ", ".join(g.title for g in list_roadmaps(MENTOR_CURRICULUM_PATH)) or "none"
+        msg = (
+            f"⚠️ No roadmap exactly matching '{target}' in `{MENTOR_CURRICULUM_PATH}`. "
+            f"What I have: {known}."
+        )
+        return {"feedback_message": msg, "written_files": [], "memory_delta": {}}
 
-    if payload and ("node_id" in payload or "node_title" in payload):
-        n_target = payload.get("node_id") or payload.get("node_title")
-        ok, msg = edit_topic_node(OBSIDIAN_VAULT_PATH, OBSIDIAN_TOPIC_FOLDER, n_target, payload)
-        if ok:
-            remaining_graphs = load_topic_graphs(OBSIDIAN_VAULT_PATH, OBSIDIAN_TOPIC_FOLDER)
-            memory_delta = {
-                "topic_graphs": [g.model_dump(mode="json") for g in remaining_graphs],
+    # --- edit an existing node (structure only — the prose lives in the note) ---
+    n_target = payload.get("node_id") or payload.get("node_title")
+    if n_target:
+        editable = {
+            "title",
+            "day",
+            "status",
+            "estimated_hours",
+            "content_type",
+            "prerequisites",
+            "resources",
+            "notes",
+            "anchors",
+            "checkpoint",
+        }
+        updates = {k: v for k, v in payload.items() if k in editable}
+        if not updates:
+            updates = {"notes": payload.get("notes") or state["raw_instructions"]}
+        ok, msg = update_node(MENTOR_CURRICULUM_PATH, graph.topic_id, str(n_target), updates)
+        if not ok:
+            return {"feedback_message": f"⚠️ {msg}", "written_files": [], "memory_delta": {}}
+        remaining = list_roadmaps(MENTOR_CURRICULUM_PATH)
+        return {
+            "feedback_message": f"✏️ **{msg}**",
+            "written_files": ["updated"],
+            "memory_delta": {
+                "topic_graphs": [g.model_dump(mode="json") for g in remaining],
                 "activity_log": [msg],
-            }
-            return {"feedback_message": f"✏️ **{msg}**", "written_files": ["updated"], "memory_delta": memory_delta}
+            },
+        }
 
-    raw = state["raw_instructions"]
-    node_title = state.get("target_node_id") or raw
+    # --- add a new node to the roadmap ---
+    node_title = state.get("target_node_id") or state["raw_instructions"]
     if "The user requested:" in node_title:
         node_title = node_title.split("The user requested:")[-1].strip().strip('"').strip("'")
 
-    graph_id = slugify(target)
-    node_id = f"tn_{slugify(node_title)}"
-
     node = TopicNode(
-        id=node_id,
+        id=f"tn_{slugify(node_title)}",
         title=node_title,
-        estimated_hours=payload.get("estimated_hours", 1.5),
-        status="not_started",
-        prerequisites=[],
-        notes=payload.get("notes", f"Added to roadmap '{target}'."),
+        estimated_hours=float(payload.get("estimated_hours", 1.5)),
+        day=payload.get("day"),
+        notes=payload.get("notes") or f"Added to roadmap '{graph.title}'.",
     )
-
-    written_path = write_topic_node(
-        vault_path=OBSIDIAN_VAULT_PATH,
-        folder=OBSIDIAN_TOPIC_FOLDER,
-        graph_id=graph_id,
-        graph_title=target,
-        node=node,
-        day=payload.get("day", 1),
+    ok, msg = add_node(
+        MENTOR_CURRICULUM_PATH,
+        graph.topic_id,
+        node,
+        prerequisites=list(payload.get("prerequisites") or []),
     )
-    _regenerate_roadmap_index(OBSIDIAN_VAULT_PATH, OBSIDIAN_TOPIC_FOLDER, graph_id)
+    if not ok:
+        return {"feedback_message": f"⚠️ {msg}", "written_files": [], "memory_delta": {}}
 
-    remaining_graphs = load_topic_graphs(OBSIDIAN_VAULT_PATH, OBSIDIAN_TOPIC_FOLDER)
-    memory_delta = {
-        "topic_graphs": [g.model_dump(mode="json") for g in remaining_graphs],
-        "activity_log": [f"Added new topic '{node_title}' to roadmap '{target}' in vault."],
-    }
-
-    msg = f"✏️ **Added Topic '{node_title}' to Roadmap '{target}' in Obsidian Vault.**\nFile: `{written_path}`"
+    remaining = list_roadmaps(MENTOR_CURRICULUM_PATH)
     return {
-        "feedback_message": msg,
-        "written_files": [written_path],
-        "memory_delta": memory_delta,
+        "feedback_message": f"✏️ **{msg}**",
+        "written_files": [f"{graph.topic_id}/{slugify(node_title)}"],
+        "memory_delta": {
+            "topic_graphs": [g.model_dump(mode="json") for g in remaining],
+            "activity_log": [msg],
+        },
     }
 
 
@@ -394,6 +486,7 @@ def web_researcher(state: GoalDecomposerState) -> dict:
     return {"web_research_summary": summary}
 
 
+@component_span("goal_decomposer:architect", tags=["component:goal_decomposer:architect"])
 def llm_architect(state: GoalDecomposerState) -> dict:
     """Phase 1: High-level Curriculum Architect. Generates DAG topology, subtopic outlines,
     AND classifies each subtopic's content_type so Phase 2 doesn't force one fixed template
@@ -452,6 +545,85 @@ def llm_architect(state: GoalDecomposerState) -> dict:
     return {"outline": outline}
 
 
+@component_span("goal_decomposer:tutorial_architect", tags=["component:goal_decomposer:tutorial_architect"])
+def tutorial_architect(state: GoalDecomposerState) -> dict:
+    """
+    Single-topic tutorial spec — the decompiser's lightweight mode.
+
+    Reads the requested topic + the mentor's guidance (weaknesses, subtopics
+    to focus on) from the task instructions and produces a ONE-subtopic
+    outline whose `what_to_cover` is built around that emphasis. The
+    decompose/workflow guidance is loaded from the external tutorial-writer
+    toolkit (never duplicated here).
+    """
+    raw = state["raw_instructions"]
+    topic = state.get("goal_topic") or raw.strip() or "untitled topic"
+    hours = state.get("target_hours_per_day") or 2.0
+
+    try:
+        from orchestrator.toolkits import render_toolkit_block
+        toolkit_block = render_toolkit_block("tutorial-writer", workflow="decompose")
+    except Exception as exc:
+        print(f"[goal_decomposer] toolkit render failed: {exc}")
+        toolkit_block = ""
+
+    system_prompt = (
+        "You are a principal technical educator writing the SPECIFICATION for "
+        "one deep tutorial note. You decide whether the topic needs splitting "
+        "(usually NOT for a single-command tutorial) and classify its content type."
+        "\n\n"
+        + (toolkit_block + "\n\n" if toolkit_block else "")
+        + (
+            "Rules:\n"
+            "1. Decide: does this topic need a split to be teachable in 45-60 min chunks? "
+            "For a single 'write a tutorial on X' command the answer is almost always NO — "
+            "one node, one note, built around the user's stated weakness.\n"
+            "2. Every section of what_to_cover must target the mentor's emphasis "
+            "(the [MENTOR GUIDANCE / STRATEGY] block) — the weakness is curriculum.\n"
+            "3. Classify content_type by what best teaches THIS topic: "
+            "'conceptual' (theory/tradeoffs), 'algorithmic' (approach+complexity), "
+            "'hands_on_code' (runnable example), 'reference' (cheat-sheet).\n"
+            "4. graph_title = the topic (plus '+ Deep Tutorial'). total_days = 1.\n"
+        )
+    )
+
+    user_prompt = (
+        f"Tutorial request: {raw}\n"
+        f"Topic: {topic}\n"
+        f"Budget: {hours} hours.\n\n"
+        "Return a GoalDecompositionOutline with EXACTLY one subtopic whose "
+        "what_to_cover reflects the guidance above."
+    )
+
+    outline: GoalDecompositionOutline | None = None
+    try:
+        from orchestrator.llm import get_reasoning_llm
+        structured_llm = get_reasoning_llm(temperature=0.3).with_structured_output(GoalDecompositionOutline)
+        outline = structured_llm.invoke([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ])
+    except Exception as exc:
+        print(f"[goal_decomposer] tutorial_architect error: {exc}")
+        # Fail-open: a minimal single-node spec so the pipeline still writes.
+        outline = GoalDecompositionOutline(
+            graph_title=f"{topic} + Deep Tutorial",
+            total_days=1,
+            subtopics=[SubTopicOutline(
+                title=topic[:120],
+                estimated_hours=hours,
+                day=1,
+                prerequisite_titles=[],
+                what_to_cover=raw[:400],
+                content_type="hands_on_code",
+            )],
+            summary_notes="Single-topic tutorial requested via direct command.",
+        )
+
+    return {"outline": outline}
+
+
+@component_span("goal_decomposer:node_expander", tags=["component:goal_decomposer:node_expander"])
 def _expand_single_subtopic_node(
     spec: SubTopicOutline,
     goal_topic: str,
@@ -477,9 +649,19 @@ def _expand_single_subtopic_node(
 
     type_prompt = WRITER_PROMPT_BY_TYPE.get(content_type, WRITER_PROMPT_BY_TYPE["hands_on_code"])
 
+    try:
+        from orchestrator.toolkits import render_toolkit_block
+        toolkit_block = render_toolkit_block("tutorial-writer", workflow="write-tutorial")
+        if toolkit_block:
+            toolkit_block += "\n\n(Also run the 'review' workflow before saving.)"
+    except Exception as exc:
+        print(f"[goal_decomposer] toolkit render failed: {exc}")
+        toolkit_block = ""
+
     system_prompt = (
         f"You are an elite, mentor-grade AI Systems Architect and Principal Staff Engineer.\n"
         f"Write a comprehensive, SOTA, high-density tutorial note in Markdown format.\n\n"
+        f"SKILL INSTRUCTIONS (external standard — follow them exactly):\n{toolkit_block}\n\n"
         f"SPECIALIST TEACHING GUIDANCE:\n{type_prompt}\n\n"
         "STRICT QUALITY & COMPLETENESS RULES:\n"
         "1. NEVER use placeholders like '...', 'TODO', 'TBD', or truncated snippets. Write every section out in full.\n"
@@ -582,16 +764,14 @@ def deep_node_expander(state: GoalDecomposerState) -> dict:
     if task:
         instructions = task.instructions or ""
         if task.memory_slice:
+            # Phase 5: bio_summary / working_habits moved to DNA memory — they
+            # arrive inside `instructions` via the [RELEVANT MEMORIES] block.
             prof = task.memory_slice.relevant_profile or {}
-            bio = prof.get("bio_summary") or ""
             target_roles = ", ".join(prof.get("target_roles") or [])
-            habits = ", ".join(prof.get("working_habits") or [])
             user_profile_context = (
                 f"LEARNER BACKGROUND & CONTEXT:\n"
                 f"- User Request: {instructions}\n"
-                f"- Profile Bio: {bio}\n"
                 f"- Target Roles: {target_roles}\n"
-                f"- Working Habits: {habits}\n"
             )
 
     # Step 1: Expand all subtopic nodes in parallel (max_workers=3)
@@ -623,7 +803,6 @@ def deep_node_expander(state: GoalDecomposerState) -> dict:
     subtopic_meta: dict[str, tuple[int, list[str], dict[str, Any], str]] = {}
     converted_subtopic_specs: list[SubTopicSpec] = []
     written_files: list[str] = []
-    nodes_by_day: dict[int, list[tuple[TopicNode, list[str]]]] = {}
 
     for spec in outline.subtopics:
         spec_title = spec.title.strip()
@@ -643,45 +822,53 @@ def deep_node_expander(state: GoalDecomposerState) -> dict:
                 if p_title in title_to_node:
                     node.prerequisites.append(title_to_node[p_title].id)
 
-    # Step 3: Write markdown files to Obsidian vault
-    for spec in outline.subtopics:
-        spec_title = spec.title.strip()
-        if spec_title in title_to_node:
-            node = title_to_node[spec_title]
-            day, prereq_titles, ped_details, content_type = subtopic_meta[node.id]
-
-            file_path = write_topic_node(
-                vault_path=OBSIDIAN_VAULT_PATH,
-                folder=OBSIDIAN_TOPIC_FOLDER,
-                graph_id=graph_id,
-                graph_title=graph_title,
-                node=node,
-                day=day,
-                prereq_titles=prereq_titles,
-                pedagogical_details=ped_details,
-            )
-            written_files.append(file_path)
-
-            if day not in nodes_by_day:
-                nodes_by_day[day] = []
-            nodes_by_day[day].append((node, prereq_titles))
-
-    # Step 4: Write Roadmap Index File
-    index_file = write_roadmap_index(
-        vault_path=OBSIDIAN_VAULT_PATH,
-        folder=OBSIDIAN_TOPIC_FOLDER,
-        graph_id=graph_id,
-        graph_title=graph_title,
-        nodes_by_day=nodes_by_day,
-    )
-
-    # Step 5: Construct TopicGraph for memory store
-    from schemas.memory import TopicGraph
+    # Step 3: assemble the graph, then let CODE own the day assignment.
+    # The model proposes hours per subtopic; `allocate_days` packs them into days
+    # against the requested budget in topological order. Before this, `day` was
+    # whatever the outline said and nothing ever checked the arithmetic — the live
+    # curriculum held a "4-Day" roadmap whose nodes sum to 22 hours (5.5h/day).
     created_topic_graph = TopicGraph(
         topic_id=graph_id,
         title=graph_title,
         nodes={node.id: node for node in title_to_node.values()},
+        source=RoadmapSource(kind="topic"),
+        target_days=state.get("target_days"),
+        hours_per_day=state.get("target_hours_per_day"),
     )
+    created_topic_graph, budget = allocate_days(created_topic_graph)
+
+    # Step 4: ONE atomic write — notes, index, then the manifest as the commit
+    # point. The old path wrote each note separately and the index last, with no
+    # error handling, so a failure midway left a partial roadmap behind.
+    contents = {
+        node_id: render_pedagogical_body(details)
+        for node_id, (_day, _prereqs, details, _ctype) in subtopic_meta.items()
+    }
+    report = write_roadmap(MENTOR_CURRICULUM_PATH, created_topic_graph, contents=contents)
+
+    written_files = [f"{report.folder}/{name}" for name in report.notes_written]
+    index_file = report.index
+
+    # Re-read so the in-memory graph matches what was persisted (version, days).
+    persisted = find_roadmap_any(MENTOR_CURRICULUM_PATH, graph_id)
+    if persisted is not None:
+        created_topic_graph = persisted
+
+    # Keep the printed breakdown honest: the specs still carry the day the MODEL
+    # proposed, while `allocate_days` is the owner of `day`. Remap them so the
+    # summary shows what was actually written.
+    aligned_specs: list[SubTopicSpec] = []
+    for spec in converted_subtopic_specs:
+        node = title_to_node.get(spec.title.strip())
+        real_day = (
+            created_topic_graph.nodes[node.id].day
+            if node is not None and node.id in created_topic_graph.nodes
+            else None
+        )
+        aligned_specs.append(
+            spec.model_copy(update={"day": real_day}) if real_day else spec
+        )
+    converted_subtopic_specs = aligned_specs
 
     decomposition = GoalDecompositionSpec(
         graph_title=graph_title,
@@ -692,6 +879,7 @@ def deep_node_expander(state: GoalDecomposerState) -> dict:
 
     return {
         "written_files": written_files,
+        "budget": budget,
         "index_file_path": index_file,
         "created_topic_graph": created_topic_graph,
         "decomposition": decomposition,
@@ -715,9 +903,15 @@ def response_formatter(state: GoalDecomposerState) -> dict:
         return {"feedback_message": "I was unable to create the roadmap. Please try rephrasing your goal."}
 
     graph_title = decomp.graph_title or "Learning Roadmap"
+    index_path = state.get("index_file_path") or ""
+    roadmap_folder = (
+        index_path.rsplit("/", 1)[0]
+        if "/" in index_path
+        else MENTOR_CURRICULUM_PATH
+    )
     lines: list[str] = [
-        f"🗺️ **Created Detailed Pedagogical Roadmap in Obsidian: {graph_title}**",
-        f"Vault location: `{OBSIDIAN_VAULT_PATH}/{OBSIDIAN_TOPIC_FOLDER}`",
+        f"🗺️ **Created your roadmap: {graph_title}**",
+        f"Folder: `{roadmap_folder}/` — the {len(written)} topic notes, the index and the manifest all live together",
         f"Main index file: `{state['index_file_path']}`",
         "",
         f"**Summary:** {decomp.summary_notes}",
@@ -745,8 +939,24 @@ def response_formatter(state: GoalDecomposerState) -> dict:
             lines.append(f"  - {icon} `{spec.title}` ({spec.estimated_hours}h){prereq_str}")
         lines.append("")
 
-    lines.append("Open your **Obsidian Graph View** to visualize the dependencies!")
-    lines.append("Whenever you are ready, just say: *\"Plan my day\"* and I will pull the unlocked topics from Obsidian into your daily plan.")
+    budget = state.get("budget") or {}
+    if budget.get("capacity_hours") and not budget.get("fits"):
+        lines.append(
+            f"⚠️ **Time-budget check:** the topics add up to {budget['total_hours']}h against a "
+            f"{budget['capacity_hours']}h budget ({budget['target_days']} days × "
+            f"{budget['hours_per_day']}h) — over by {budget['overflow_hours']}h. "
+            "The days are packed as tightly as the plan allows; say the word and I'll trim it or extend the deadline."
+        )
+        lines.append("")
+    elif budget.get("total_hours"):
+        lines.append(
+            f"️ Time budget: {budget['total_hours']}h over {budget.get('days_used') or budget.get('target_days')} day(s) "
+            f"({budget.get('hours_per_day_actual')}h/day)."
+        )
+        lines.append("")
+
+    lines.append("Open the roadmap folder in Obsidian to see the dependency graph.")
+    lines.append("Whenever you are ready, just say: *\"Plan my day\"* and I will pull the unlocked topics into your daily plan.")
 
     message = "\n".join(lines)
 
@@ -805,6 +1015,8 @@ def route_by_action(state: GoalDecomposerState) -> str:
         return "delete_vault"
     if action == "edit":
         return "edit_vault"
+    if action == "tutorial":
+        return "tutorial_architect"
     if state.get("target_days") is None:
         return "clarify_timeframe"
     return "memory_reader"
@@ -824,6 +1036,7 @@ builder.add_node("edit_vault", edit_vault_node)
 builder.add_node("memory_reader", memory_reader)
 builder.add_node("web_researcher", web_researcher)
 builder.add_node("llm_architect", llm_architect)
+builder.add_node("tutorial_architect", tutorial_architect)
 builder.add_node("deep_node_expander", deep_node_expander)
 builder.add_node("response_formatter", response_formatter)
 builder.add_node("pack_result", pack_result)
@@ -837,6 +1050,7 @@ builder.add_conditional_edges(
         "list_vault": "list_vault",
         "delete_vault": "delete_vault",
         "edit_vault": "edit_vault",
+        "tutorial_architect": "tutorial_architect",
         "memory_reader": "memory_reader",
     },
 )
@@ -847,6 +1061,7 @@ builder.add_edge("edit_vault", "response_formatter")
 builder.add_edge("memory_reader", "web_researcher")
 builder.add_edge("web_researcher", "llm_architect")
 builder.add_edge("llm_architect", "deep_node_expander")
+builder.add_edge("tutorial_architect", "deep_node_expander")
 builder.add_edge("deep_node_expander", "response_formatter")
 builder.add_edge("response_formatter", "pack_result")
 builder.add_edge("pack_result", END)
@@ -860,6 +1075,11 @@ app = builder.compile()
 
 def run_goal_decomposer(task: AgentTask) -> AgentResult:
     """Run Goal Decomposer subgraph against an incoming AgentTask."""
-    initial_state = build_initial_state(task)
-    final_state = app.invoke(initial_state)
+    with component(
+        f"agent:{task.agent_name}",
+        tags=[f"agent:{task.agent_name}", f"task:{task.task_type}"],
+        metadata={"agent_name": task.agent_name, "task_type": task.task_type},
+    ):
+        initial_state = build_initial_state(task)
+        final_state = app.invoke(initial_state)
     return final_state["result"]

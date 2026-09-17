@@ -9,8 +9,9 @@ mentor conversation.  It is NOT the same as any sub-agent's internal state.
 Turn lifecycle:
     user_input
         → intake_node          (write user_input into working_memory)
-        → summarize_node       (condense memory tiers into summary_text)
-        → reason_node          (LLM picks: route | clarify | nudge)
+        → summarize_node       (build DNA context document)
+        → reason_node          (LLM picks: route | direct_response | clarify | nudge)
+          ├─ direct_response   → format_output_node → END  (Qwen3-235B w/ full context)
           ├─ clarify_node      → format_output_node → END
           ├─ nudge_node        → format_output_node → END
           └─ dispatch_node
@@ -31,12 +32,18 @@ from operator import add
 from typing import Annotated, Any, Optional, TypedDict
 
 from schemas import AgentResult, AgentTask, DraftSuggestion
-from orchestrator.memory.store import MemoryManager
-
 
 # ---------------------------------------------------------------------------
-# Nested helper
+# Nested helpers
 # ---------------------------------------------------------------------------
+
+class ConversationTurn(TypedDict):
+    """One entry in the live session transcript (msgpack-safe plain types)."""
+
+    role: str        # "user" | "mentor"
+    content: str
+    timestamp: str   # ISO 8601 local time (with UTC offset)
+
 
 class WorkingMemory(TypedDict):
     """Short-lived in-turn conversation context."""
@@ -46,6 +53,12 @@ class WorkingMemory(TypedDict):
     user_input: Optional[str]
     last_assistant_message: Optional[str]
     pending_draft_suggestions: list[DraftSuggestion]
+    # Live session transcript — appended on every turn (intake adds the user
+    # turn, format_output adds the mentor turn), persisted to the
+    # conversation_sessions table when the session closes.
+    conversation_history: list[ConversationTurn]
+    session_started_at: Optional[str]   # ISO timestamp of this session's first turn
+    last_turn_at: Optional[str]         # ISO timestamp of the most recent turn
     extra: dict[str, Any]  # escape hatch for nodes to pass arbitrary state
 
 
@@ -69,13 +82,18 @@ class OrchestratorState(TypedDict):
     # Set by dispatch_node → context_builder_node → agent_executor_node.
     current_task: Optional[AgentTask]
     results: Annotated[list[AgentResult], add]
-    # Pipeline execution tracking for multi-agent chaining (e.g. goal_decomposer -> daily_planner)
+    # Pipeline execution tracking for multi-agent chaining (e.g. goal_decomposer -> job_hunter)
     agent_pipeline: list[str]
     pipeline_step: int
 
     # Final outputs written by format_output_node.
     response_text: Optional[str]
     status: str  # "idle" | "done" | "needs_clarification" | "failed"
+
+    # Per-turn execution trace for the architecture visualizer: an ordered list
+    # of {"kind": "node"|"tool", ...} events appended by the node wrapper in
+    # orchestrator.py (plain dicts → msgpack/JSON safe). Reset each turn.
+    execution_trace: list[dict[str, Any]]
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +107,9 @@ def _build_working_memory(session_id: str) -> WorkingMemory:
         user_input=None,
         last_assistant_message=None,
         pending_draft_suggestions=[],
+        conversation_history=[],
+        session_started_at=None,
+        last_turn_at=None,
         extra={},
     )
 
@@ -111,6 +132,7 @@ def build_initial_state(
         pipeline_step=0,
         response_text=None,
         status="idle",
+        execution_trace=[],
     )
 
 

@@ -1,0 +1,158 @@
+schema_version: 1
+graph_id: repo_ai
+title: AI Portfolio Project Mastery
+version: 2
+created_at: '2026-09-17T13:15:20.635655+00:00'
+updated_at: '2026-09-17T13:15:21.139763+00:00'
+source:
+  kind: repo
+  path: /home/nik/Desktop/AI
+  commit: e4cbb8b
+  stopping_rule: comprehension
+stopping_rule: comprehension
+target_days: null
+hours_per_day: null
+nodes:
+- id: tn_multi_agent_orchestration
+  title: Multi-Agent Orchestration
+  status: not_started
+  estimated_hours: 3.0
+  content_type: conceptual
+  prerequisites: []
+  resources: []
+  notes: Understanding how multiple agents interact and are managed within the system,
+    particularly through the orchestrator.
+  anchors:
+  - kind: symbol
+    path: orchestrator/orchestrator.py
+    symbol: run_orchestrator_turn
+    note: This function is central to the orchestrator's operation, managing the flow
+      of agent interactions.
+- id: tn_memory_management
+  title: Memory Management
+  status: not_started
+  estimated_hours: 3.0
+  content_type: conceptual
+  prerequisites: []
+  resources: []
+  notes: The design and implementation of the memory system, including how data is
+    stored and retrieved across different memory types.
+  anchors:
+  - kind: symbol
+    path: orchestrator/memory/store.py
+    symbol: MemoryManager
+    note: This class is responsible for managing memory operations and ensuring data
+      integrity.
+- id: tn_goal_decomposition
+  title: Goal Decomposition
+  status: not_started
+  estimated_hours: 2.0
+  content_type: conceptual
+  prerequisites: []
+  resources: []
+  notes: The process of breaking down high-level learning goals into structured, actionable
+    tasks within the system.
+  anchors:
+  - kind: symbol
+    path: agents/Goal_Decomposer/goal_decomposer.py
+    symbol: validate_tutorial_quality
+    note: This function validates the quality of generated tutorials, reflecting the
+      goal decomposition process.
+- id: tn_fastapi_integration
+  title: FastAPI Integration
+  status: not_started
+  estimated_hours: 2.0
+  content_type: conceptual
+  prerequisites: []
+  resources: []
+  notes: How the FastAPI framework is used to expose RESTful endpoints for the AI
+    mentor's functionalities.
+  anchors:
+  - kind: symbol
+    path: api/main.py
+    symbol: FastAPI
+    note: The main entry point for the FastAPI application, defining the API structure.
+- id: tn_intent_shaped_tool_surface
+  title: Intent-Shaped Tool Surface
+  status: not_started
+  estimated_hours: 2.0
+  content_type: conceptual
+  prerequisites: []
+  resources: []
+  notes: Understanding how the system's tools are designed around user intents rather
+    than database structures, facilitating easier integration and changes.
+  anchors:
+  - kind: symbol
+    path: api/tools.py
+    symbol: router
+    note: This router defines the API endpoints based on user intents.
+- id: tn_data_validation_and_integrity
+  title: Data Validation and Integrity
+  status: not_started
+  estimated_hours: 3.0
+  content_type: conceptual
+  prerequisites: []
+  resources: []
+  notes: The mechanisms in place to ensure that data written to the memory stores
+    is valid and consistent, preventing corruption.
+  anchors:
+  - kind: symbol
+    path: orchestrator/memory/roadmap.py
+    symbol: roadmap_dir
+    note: This module ensures that the roadmap data is consistently managed.
+- id: tn_agent_specialization
+  title: Agent Specialization
+  status: not_started
+  estimated_hours: 2.0
+  content_type: conceptual
+  prerequisites: []
+  resources: []
+  notes: How different agents in the system are specialized for specific tasks, such
+    as job hunting or goal decomposition.
+  anchors:
+  - kind: symbol
+    path: agents/Job_Hunter/job_hunter.py
+    symbol: JobHunterState
+    note: This class encapsulates the state and behavior specific to the job hunting
+      agent.
+- id: tn_cognitive_layer_design
+  title: Cognitive Layer Design
+  status: not_started
+  estimated_hours: 3.0
+  content_type: conceptual
+  prerequisites: []
+  resources: []
+  notes: The architectural decisions that define how the cognitive layer interacts
+    with the agents and memory systems.
+  anchors:
+  - kind: file
+    path: docs/Architecture Overview.md
+    note: This document outlines the overall architecture and cognitive layer design.
+- id: tn_markdown_content_generation
+  title: Markdown Content Generation
+  status: not_started
+  estimated_hours: 2.0
+  content_type: conceptual
+  prerequisites: []
+  resources: []
+  notes: The process of generating structured Markdown content from the system's data,
+    particularly for educational purposes.
+  anchors:
+  - kind: symbol
+    path: agents/Goal_Decomposer/goal_decomposer.py
+    symbol: slugify
+    note: This function helps in generating file-safe names for Markdown files.
+- id: tn_error_handling_in_api
+  title: Error Handling in API
+  status: not_started
+  estimated_hours: 2.0
+  content_type: conceptual
+  prerequisites: []
+  resources: []
+  notes: Understanding how the system handles errors in API calls to ensure robustness
+    and prevent crashes.
+  anchors:
+  - kind: symbol
+    path: api/tools.py
+    symbol: get_memory_manager
+    note: This function manages memory access and includes error handling.

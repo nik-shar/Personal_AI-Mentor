@@ -6,14 +6,14 @@ context schema to config.AGENT_CONTEXT_SCHEMAS.
 """
 
 from __future__ import annotations
+
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
 
-from schemas import AgentResult, AgentTask
-
-from agents.Daily_Coach import run_daily_planner, run_learning_monitor
 from agents.Goal_Decomposer.goal_decomposer import run_goal_decomposer
+from agents.Job_Hunter import run_job_hunter
 from agents.Linkedin_writer import run_linkedin_writer
+from schemas import AgentResult, AgentTask
 
 
 @dataclass(frozen=True)
@@ -26,16 +26,6 @@ class AgentSpec:
 
 
 REGISTRY: dict[str, AgentSpec] = {
-    "daily_planner": AgentSpec(
-        name="daily_planner",
-        run=run_daily_planner,
-        allowed_task_types=["build_daily_plan"],
-    ),
-    "learning_monitor": AgentSpec(
-        name="learning_monitor",
-        run=run_learning_monitor,
-        allowed_task_types=["log_learning_session", "learning_report"],
-    ),
     "linkedin_writer": AgentSpec(
         name="linkedin_writer",
         run=run_linkedin_writer,
@@ -45,6 +35,18 @@ REGISTRY: dict[str, AgentSpec] = {
         name="goal_decomposer",
         run=run_goal_decomposer,
         allowed_task_types=["decompose_goal"],
+    ),
+    "job_hunter": AgentSpec(
+        name="job_hunter",
+        run=run_job_hunter,
+        allowed_task_types=[
+            "tailor_resume",
+            "log_application",
+            "update_application_status",
+            "job_search_review",
+            "assess_fit",
+            "search_jobs",
+        ],
     ),
     "fallback": AgentSpec(
         name="fallback",
@@ -60,9 +62,9 @@ def _fallback_agent(task: AgentTask) -> AgentResult:
     General-chat catch-all agent powered by the reasoning LLM.
     Supports web search for external queries and opportunistic question surfacing.
     """
-    from schemas import AgentResult, ResultStatus
-    from orchestrator.llm import get_reasoning_llm
     from integrations.search import perform_web_search
+    from orchestrator.llm import get_conversational_llm
+    from schemas import AgentResult, ResultStatus
 
     profile = task.memory_slice.relevant_profile or {}
 
@@ -132,6 +134,17 @@ def _fallback_agent(task: AgentTask) -> AgentResult:
     system_prompt = (
         "You are Nikhil's personal AI mentor-companion. "
         "You are warm, direct, and focused on helping him grow as an AI engineer.\n\n"
+        "CRITICAL BEHAVIORAL RULES:\n"
+        "- MATCH YOUR RESPONSE TO THE TYPE OF MESSAGE:\n"
+        "  • Greeting ('hi', 'hey', 'hello', 'hi there') → Greet back warmly. "
+        "1-2 sentences max. Do NOT give advice, plans, or numbered lists.\n"
+        "  • Emotional sharing → Acknowledge first, then ask what he needs.\n"
+        "  • Specific question → Answer using his profile context below.\n"
+        "  • Open-ended request → Give focused, personalized guidance.\n"
+        "- NEVER dump unsolicited career advice, generic tips, or numbered action "
+        "plans unless Nikhil explicitly asks for them.\n"
+        "- Use his ACTUAL profile data below — never give generic advice like "
+        "'master Python and TensorFlow' when you know his specific skills.\n\n"
         "Here is what you know about Nikhil:\n"
         f"{profile_block}"
         f"{web_search_block}"
@@ -141,13 +154,45 @@ def _fallback_agent(task: AgentTask) -> AgentResult:
         "Never make up unverified facts."
     )
 
+    # Manager harness: give the fallback the same deterministic computation
+    # tools (streak math, plan budgeting, topic availability) plus the
+    # calendar-grid and memory tools so general chat can answer scheduling /
+    # arithmetic / persistence questions without hallucinating numbers.
+    situation_facts = ""
+    all_tools = []
     try:
-        llm = get_reasoning_llm(temperature=0.4)
-        response = llm.invoke([
+        from orchestrator.harness import (
+            TOOLS,
+            assemble_situation_facts,
+            make_calendar_tools,
+            make_memory_tools,
+            run_tool_loop,
+        )
+        from orchestrator.memory.store import get_memory_manager
+
+        mm = get_memory_manager()
+        situation_facts = assemble_situation_facts(mm)
+        all_tools = TOOLS + list(make_memory_tools(mm)) + list(make_calendar_tools(mm))
+    except Exception as exc:
+        print(f"[_fallback_agent] harness unavailable: {exc}")
+
+    tool_hint = (
+        "\n\nCOMPUTATION TOOLS (available via function-calling): "
+        "compute_learning_streak, trim_plan_to_fit, get_available_topic_nodes, format_duration. "
+        "CALENDAR TOOLS: get_day_grid, find_available_slots, place_time_block, set_anchor. "
+        "MEMORY TOOLS: save_daily_plan, log_learning_session. "
+        "Use them for exact arithmetic, graph, calendar, or persistence facts; "
+        "not for ordinary conversation."
+    )
+    user_content = f"{user_message}\n\n{situation_facts}{tool_hint}".rstrip()
+
+    try:
+        llm = get_conversational_llm(temperature=0.4)
+        output = run_tool_loop(llm, [
             {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_message},
-        ])
-        output = response.content.strip()
+            {"role": "user",   "content": user_content},
+        ], tools=all_tools or TOOLS)
+        output = output.strip()
     except Exception as exc:
         output = (
             f"I'm having trouble connecting to my language model right now ({exc}). "

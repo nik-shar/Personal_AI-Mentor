@@ -9,7 +9,6 @@ Supports DuckDuckGo Search (zero-config local default) and Tavily Search API
 from __future__ import annotations
 
 import os
-from typing import Any
 
 
 def perform_web_search(query: str, max_results: int = 3) -> str:
