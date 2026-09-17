@@ -6,7 +6,7 @@ description: >-
 
 # Code Explorer
 
-<!-- AUTO-GENERATED from toolkits/code-explorer/ by scripts/tools/migrate_toolkits_to_skills.py — edit the toolkit, not this file. -->
+<!-- AUTO-GENERATED from toolkits/code-explorer/ by scripts/tools/migrate-toolkits-to-skills.mjs — edit the toolkit, not this file. -->
 
 ## When this applies
 
@@ -119,7 +119,7 @@ violation of either is unacceptable.
 
 ## Tools available right now
 
-Python sidecar tools (Python owns this data):
+Mentor tools (PI extensions, backed by files under `data/` and `learning/`):
 - `get_profile` — Read structured profile facts (identity, career targets, goals, learning state).
 - `recall_memories` — Search his memories for what he said or did around a topic.
 

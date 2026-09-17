@@ -6,7 +6,7 @@ description: >-
 
 # Calendar Manager
 
-<!-- AUTO-GENERATED from toolkits/calendar-manager/ by scripts/tools/migrate_toolkits_to_skills.py — edit the toolkit, not this file. -->
+<!-- AUTO-GENERATED from toolkits/calendar-manager/ by scripts/tools/migrate-toolkits-to-skills.mjs — edit the toolkit, not this file. -->
 
 ## When this applies
 
@@ -115,7 +115,7 @@ The prose below is the instruction layer the mentor applies consciously.
 
 ## Tools available right now
 
-Python sidecar tools (Python owns this data):
+Mentor tools (PI extensions, backed by files under `data/` and `learning/`):
 - `get_day_grid` — The 48-slot day grid with slot states, code-computed free windows, and the clock.
 - `find_available_slots` — Candidate placement windows for a duration, computed from the grid.
 - `place_time_block` — Book one validated block. Code-enforced: 30-minute alignment, overlap check, and an anchor guard that refuses to place tasks over sleep/meal/commute/gym.

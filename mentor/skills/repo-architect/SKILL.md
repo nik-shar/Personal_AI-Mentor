@@ -6,7 +6,7 @@ description: >-
 
 # Repo Architect
 
-<!-- AUTO-GENERATED from toolkits/repo-architect/ by scripts/tools/migrate_toolkits_to_skills.py — edit the toolkit, not this file. -->
+<!-- AUTO-GENERATED from toolkits/repo-architect/ by scripts/tools/migrate-toolkits-to-skills.mjs — edit the toolkit, not this file. -->
 
 ## When this applies
 
@@ -181,7 +181,7 @@ deterministic. The prose below is the instruction layer you apply consciously.
 
 ## Tools available right now
 
-Python sidecar tools (Python owns this data):
+Mentor tools (PI extensions, backed by files under `data/` and `learning/`):
 - `get_identity` — Who he is, and what you have learned about him — structured facts plus conversation memories, each with provenance and confidence.
 - `recall_memories` — Search his memories for what he said or did around a topic.
 - `available_topic_nodes` — What he can study right now: in-progress nodes first, then nodes whose prerequisites are all done.

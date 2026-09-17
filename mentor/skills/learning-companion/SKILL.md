@@ -6,7 +6,7 @@ description: >-
 
 # Learning Companion
 
-<!-- AUTO-GENERATED from toolkits/learning-companion/ by scripts/tools/migrate_toolkits_to_skills.py — edit the toolkit, not this file. -->
+<!-- AUTO-GENERATED from toolkits/learning-companion/ by scripts/tools/migrate-toolkits-to-skills.mjs — edit the toolkit, not this file. -->
 
 ## When this applies
 
@@ -134,19 +134,19 @@ is unacceptable.
 
 ## Tools available right now
 
-Python sidecar tools (Python owns this data):
+Mentor tools (PI extensions, backed by files under `data/` and `learning/`):
 - `recall_memories` — Search his memories for what he said or did around a topic.
 - `get_profile` — Read structured profile facts (identity, career targets, goals, learning state).
 - `available_topic_nodes` — What he can study right now: in-progress nodes first, then nodes whose prerequisites are all done.
 - `log_learning_session` — Record what he studied today and advance or reset his streak.
 
-Native tools (run in TypeScript, no round-trip):
+Pure local tools (no I/O — computed in-process, no file or network hop):
 - `compute_learning_streak` — the streak arithmetic, computed locally rather than fetched
 - `trim_plan_to_fit` — drop the lowest-priority items until a plan fits the budget (runs locally, no round-trip)
 
 Built-in PI tools available here: `read`
 
-**Still missing:** **No learning-log reader yet.** The Python build injected a `RETRIEVAL PRACTICE MATERIAL` block; here you assemble the material yourself from `recall_memories` + `available_topic_nodes`. If those return nothing, say you don't have enough history to quiz him on — **never invent history.**
+**Still missing:** **No learning-log reader yet.** Assemble retrieval practice material yourself from `recall_memories` + `available_topic_nodes` + `data/memories.jsonl`. If those return nothing, say you don't have enough history to quiz him on — **never invent history.**
 
 ## Workflows
 

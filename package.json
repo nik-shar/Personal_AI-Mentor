@@ -1,0 +1,15 @@
+{
+  "name": "personal-ai-mentor",
+  "version": "0.2.0",
+  "private": true,
+  "description": "A local-first personal AI mentor, built on the PI agent harness (TypeScript).",
+  "type": "module",
+  "scripts": {
+    "skills": "node scripts/tools/migrate-toolkits-to-skills.mjs",
+    "mentor": "bash scripts/run_pi_mentor.sh",
+    "test:mentor": "node --test mentor/test/*.test.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  }
+}

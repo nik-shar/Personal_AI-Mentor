@@ -1,12 +1,12 @@
 ---
 name: tutorial-writer
 description: >-
-  The tutorial-writing skillset for the goal_decomposer agent — pedagogy, decomposition judgment, research-first drafting, and the quality standard that every note must meet before it is saved. Use whenever Nik asks for a written tutorial, deep note, walkthrough, or study material on a topic — anything meant to be read later rather than discussed now.
+  The tutorial-writing skillset — pedagogy, decomposition judgment, research-first drafting, and the quality standard that every note must meet before it is saved. Use whenever Nik asks for a written tutorial, deep note, walkthrough, or study material on a topic — anything meant to be read later rather than discussed now.
 ---
 
 # Tutorial Writer
 
-<!-- AUTO-GENERATED from toolkits/tutorial-writer/ by scripts/tools/migrate_toolkits_to_skills.py — edit the toolkit, not this file. -->
+<!-- AUTO-GENERATED from toolkits/tutorial-writer/ by scripts/tools/migrate-toolkits-to-skills.mjs — edit the toolkit, not this file. -->
 
 ## When this applies
 
@@ -117,14 +117,14 @@ layer: the writer must apply it consciously on every draft.
 
 ## Tools available right now
 
-Python sidecar tools (Python owns this data):
+Mentor tools (PI extensions, backed by files under `data/` and `learning/`):
 - `get_profile` — Read structured profile facts (identity, career targets, goals, learning state).
 - `available_topic_nodes` — What he can study right now: in-progress nodes first, then nodes whose prerequisites are all done.
 - `recall_memories` — Search his memories for what he said or did around a topic.
 
 Built-in PI tools available here: `read`, `grep`, `find`
 
-**Still missing:** **No vault writer yet.** Notes go under `learning/topics/` in this repo, not the Obsidian vault. Write them there and say where they landed — never claim a file was written unless it actually was.
+**Still missing:** **Notes go under `learning/topics/`, not the Obsidian vault.** Write them there and say where they landed — never claim a file was written unless it actually was.
 
 ## Workflows
 

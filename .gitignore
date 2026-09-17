@@ -1,50 +1,58 @@
-# Environment variables & secrets
+# ---------------------------------------------------------------------------
+# Personal AI Mentor — a local-first mentor on the PI agent harness.
+#
+# Two runtimes, one boundary: PI (TypeScript) owns the conversation, tools,
+# skills and guardrails; `data/` (plain files) is the memory.
+#
+# The mentor is TypeScript. There is no Python layer.
+# ---------------------------------------------------------------------------
+
+# Secrets — the Nebius key lives here.
 .env
 .env.*
 !.env.example
 
-# Local PostgreSQL Data Directory
+# ---------------------------------------------------------------------------
+# Personal memory — LOCAL ONLY, never committed.
+#
+# `data/` holds who he is and what he has done: profile.yaml, memories.jsonl,
+# episodes/, schedule/, conversations/, daylog.jsonl. This repository has a
+# public remote, so committing it would publish his private life. It is
+# deliberately untracked: the files ARE the memory, and they live on his disk.
+# ---------------------------------------------------------------------------
+# `data/*` rather than `data/` so the single README can be re-included below —
+# git cannot re-include a file whose parent directory is itself excluded.
+data/*
+!data/README.md
+
+# Local PostgreSQL data dir (left over from the retired Python layer)
 .pgdata/
 
-# Local Vector Store Data
-chroma_store/
-
-# Local Databases & Checkpoints
-*.db
-*.sqlite
-*.sqlite3
-data/checkpoints.sqlite*
-
-# Generated memory artifacts (regenerate anytime)
-data/memory.md
-data/memory_backups/
-memory.json
-
-# Roadmap store: recoverable deletions land here (`delete_roadmap` moves a folder
-# in rather than unlinking it). Local-only — never committed.
+# Curriculum: recoverable deletions land here (`delete_roadmap` moves a folder in
+# rather than unlinking it).
 learning/topics/.trash/
 
-# Python-generated & build files
-__pycache__/
-*.py[oc]
-*.pyc
-*.pyd
-build/
+# ---------------------------------------------------------------------------
+# Vendored PI agent harness — a separate upstream git repo
+# (github.com/earendil-works/pi). Never commit into this repo: it would create
+# an embedded repo / huge gitlink.
+#
+# Also note: PI loads AGENTS.md / CLAUDE.md as *project* context, and `pi/` has
+# its own build. Keep it out of git; re-clone or rebuild it instead.
+# ---------------------------------------------------------------------------
+pi/
+
+# Node
+node_modules/
 dist/
-wheels/
-*.egg-info/
-.pytest_cache/
-.ruff_cache/
-.coverage
-htmlcov/
+build/
+.wheels/
+*.tsbuildinfo
 
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
+# Obsidian vault config (docs/ is browsable in Obsidian)
+.obsidian/
 
-# IDE & Editor files
+# IDE & editor
 .vscode/
 .idea/
 .zed/
@@ -53,22 +61,6 @@ env/
 .DS_Store
 Thumbs.db
 
-# Personal files & artifacts
-*.pdf
-about_me.md
-challenges.md
-profile.yaml
-
-# Obsidian local settings (if applicable)
-.obsidian/
-
-# Log files
+# Logs
 *.log
 
-# Node / Next.js
-node_modules/
-
-# Vendored Pi agent harness — a separate upstream git repo
-# (github.com/earendil-works/pi). Never commit into this repo: it would
-# create an embedded repo / huge gitlink. Run it from ./pi via ./pi-test.sh.
-pi/
