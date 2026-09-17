@@ -96,19 +96,57 @@ def strip_leading_heading(body: str) -> str:
     return "\n".join(lines).strip()
 
 
+# ---------------------------------------------------------------------------
+# The tool registry
+#
+# This used to be read from the Python sidecar's pydantic manifest
+# (`api.tools.build_manifest`). The sidecar is gone: every tool is now a PI
+# extension under `mentor/extensions/`, backed by files under `data/`.
+#
+# So the registry is declared here, explicitly. It is the single list the
+# generated skills are validated against — which is what keeps a skill from
+# claiming a tool that does not exist, or denying one that does (the bug this
+# check was originally written to catch).
+#
+# Keep in sync with `mentor/extensions/*.ts`.
+# ---------------------------------------------------------------------------
+
+TOOL_REGISTRY: dict[str, str] = {
+    # --- memory (data/profile.yaml, data/memories.jsonl, data/episodes/) ---
+    "get_identity": (
+        "Who he is, and what you have learned about him — structured facts plus "
+        "conversation memories, each with provenance and confidence."
+    ),
+    "get_profile": "Read structured profile facts (identity, career targets, goals, learning state).",
+    "get_history": "What happened — the rolling thread, recent days, past conversations, and his day log.",
+    "recall_memories": "Search his memories for what he said or did around a topic.",
+    # --- learning (learning/topics/*/roadmap.yaml) ---
+    "available_topic_nodes": (
+        "What he can study right now: in-progress nodes first, then nodes whose "
+        "prerequisites are all done."
+    ),
+    "mark_topic_done": "Mark a topic finished, and see which topics that unlocked.",
+    "log_learning_session": "Record what he studied today and advance or reset his streak.",
+    # --- calendar (data/schedule/) ---
+    "get_day_grid": "The 48-slot day grid with slot states, code-computed free windows, and the clock.",
+    "find_available_slots": "Candidate placement windows for a duration, computed from the grid.",
+    "place_time_block": (
+        "Book one validated block. Code-enforced: 30-minute alignment, overlap check, "
+        "and an anchor guard that refuses to place tasks over sleep/meal/commute/gym."
+    ),
+    "set_anchor": "Reserve contiguous slots as a recurring life anchor that tasks can never overwrite.",
+    "get_momentum": "Streak, completion rates, and momentum trend computed fresh from schedule events.",
+    "save_daily_plan": "Persist today's plan and mirror its timed items onto the calendar grid.",
+    "log_day_event": (
+        "Record a moment of his day in his own words — waking up, starting or switching "
+        "an activity, lunch, going to sleep — and get back the interval it closed."
+    ),
+}
+
+
 def manifest_descriptions() -> dict[str, str]:
-    """
-    Tool name -> description, straight from the sidecar's pydantic manifest.
-
-    This is what keeps the generated skills honest. Availability prose used to be
-    hand-written, and it went stale the moment Phase 3 added the write tools —
-    the mentor then told Nik it had no calendar access while holding the tools to
-    read and write it. Generating the list means a skill cannot claim a tool that
-    does not exist, or deny one that does.
-    """
-    from api.tools import build_manifest
-
-    return {tool.name: tool.description for tool in build_manifest().tools}
+    """Tool name -> description, from the mentor's own registry (see above)."""
+    return dict(TOOL_REGISTRY)
 
 
 def validate_skill_tools() -> None:
@@ -132,14 +170,14 @@ def render_tools_section(skill: str) -> str:
 
     lines: list[str] = []
     if sidecar:
-        lines.append("Python sidecar tools (Python owns this data):")
+        lines.append("Mentor tools (PI extensions, backed by files under `data/` and `learning/`):")
         for tool in sidecar:
             lines.append(f"- `{tool}` — {descriptions[tool]}")
 
     if native:
         if lines:
             lines.append("")
-        lines.append("Native tools (run in TypeScript, no round-trip):")
+        lines.append("Pure local tools (no I/O — computed in-process, no file or network hop):")
         for tool in native:
             lines.append(f"- `{tool}` — {NATIVE_TOOLS[tool]}")
 
@@ -191,6 +229,12 @@ USE_WHEN: dict[str, str] = {
         "Use whenever Nik asks for a written tutorial, deep note, walkthrough, or study "
         "material on a topic — anything meant to be read later rather than discussed now."
     ),
+    "repo-architect": (
+        "Use whenever Nik points at a repository and wants to understand it, rebuild it, or "
+        "learn what it would take to work in it — any request to turn a codebase into "
+        "concepts, a curriculum, a roadmap, or a study plan. Also use when he asks what he "
+        "would need to learn for a project, or where his gaps are for one."
+    ),
 }
 
 # Which real tools each skill leans on. Every name here is checked against the
@@ -215,6 +259,15 @@ SKILL_TOOLS: dict[str, list[str]] = {
         "get_momentum",
     ],
     "tutorial-writer": ["get_profile", "available_topic_nodes", "recall_memories"],
+    "repo-architect": [
+        "get_identity",
+        "recall_memories",
+        "available_topic_nodes",
+        "mark_topic_done",
+        "get_day_grid",
+        "find_available_slots",
+        "place_time_block",
+    ],
 }
 
 # Tools implemented natively in TypeScript (mentor/src/pure/planning.ts). They
@@ -231,6 +284,7 @@ SKILL_BUILTINS: dict[str, list[str]] = {
     "code-explorer": ["read", "grep", "find", "ls", "bash"],
     "calendar-manager": [],
     "tutorial-writer": ["read", "grep", "find"],
+    "repo-architect": ["read", "grep", "find", "ls", "bash"],
 }
 
 # Hand-written, and ONLY for capabilities that genuinely do not exist yet.
@@ -246,9 +300,15 @@ SKILL_GAPS: dict[str, str] = {
     "code-explorer": "",
     "calendar-manager": "",
     "tutorial-writer": (
-        "**No vault writer yet.** The Python build wrote notes into the Obsidian vault "
-        "(`Learning/Topics/`). Until that returns, draft the tutorial in the conversation and "
-        "say you cannot file it into the vault — never claim a file was written."
+        "**No vault writer yet.** Notes go under `learning/topics/` in this repo, not the "
+        "Obsidian vault. Write them there and say where they landed — never claim a file "
+        "was written unless it actually was."
+    ),
+    "repo-architect": (
+        "**Estimates do not self-calibrate yet.** Hour figures are your judgement on the "
+        "day you wrote them; nothing reads back the real time he logged against a node to "
+        "adjust them. Say so when you present them, and when he overruns a topic "
+        "consistently, revise the estimate out loud rather than quietly re-planning."
     ),
 }
 

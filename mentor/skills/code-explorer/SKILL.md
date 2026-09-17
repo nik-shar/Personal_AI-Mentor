@@ -121,7 +121,7 @@ violation of either is unacceptable.
 
 Python sidecar tools (Python owns this data):
 - `get_profile` — Read structured profile facts (identity, career targets, goals, learning state).
-- `recall_memories` — Semantic recall over older episodic memories (warm/cold tiers).
+- `recall_memories` — Search his memories for what he said or did around a topic.
 
 Built-in PI tools available here: `read`, `grep`, `find`, `ls`, `bash`
 

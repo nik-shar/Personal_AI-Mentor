@@ -135,10 +135,10 @@ is unacceptable.
 ## Tools available right now
 
 Python sidecar tools (Python owns this data):
-- `recall_memories` — Semantic recall over older episodic memories (warm/cold tiers).
+- `recall_memories` — Search his memories for what he said or did around a topic.
 - `get_profile` — Read structured profile facts (identity, career targets, goals, learning state).
-- `available_topic_nodes` — DAG traversal: in-progress nodes first, then unlocked not-started nodes.
-- `log_learning_session` — Log a learning session and advance/reset the streak using the same arithmetic the mentor reasons with.
+- `available_topic_nodes` — What he can study right now: in-progress nodes first, then nodes whose prerequisites are all done.
+- `log_learning_session` — Record what he studied today and advance or reset his streak.
 
 Native tools (run in TypeScript, no round-trip):
 - `compute_learning_streak` — the streak arithmetic, computed locally rather than fetched

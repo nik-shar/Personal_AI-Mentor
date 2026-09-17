@@ -116,10 +116,10 @@ The prose below is the instruction layer the mentor applies consciously.
 ## Tools available right now
 
 Python sidecar tools (Python owns this data):
-- `get_day_grid` — The 48-slot day grid with slot states and code-computed free windows.
-- `find_available_slots` — Candidate placement windows for a duration, computed from the grid; a high energy level nudges earlier windows first.
-- `place_time_block` — Validate and persist one booked block. Code-enforced: 30-minute alignment, overlap check, and an anchor guard that refuses to place tasks over sleep/meal/commute/gym.
-- `set_anchor` — Reserve contiguous slots as a recurring life anchor that task placement can never overwrite.
+- `get_day_grid` — The 48-slot day grid with slot states, code-computed free windows, and the clock.
+- `find_available_slots` — Candidate placement windows for a duration, computed from the grid.
+- `place_time_block` — Book one validated block. Code-enforced: 30-minute alignment, overlap check, and an anchor guard that refuses to place tasks over sleep/meal/commute/gym.
+- `set_anchor` — Reserve contiguous slots as a recurring life anchor that tasks can never overwrite.
 - `get_momentum` — Streak, completion rates, and momentum trend computed fresh from schedule events.
 
 ## Workflows

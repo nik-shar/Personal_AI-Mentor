@@ -119,12 +119,12 @@ layer: the writer must apply it consciously on every draft.
 
 Python sidecar tools (Python owns this data):
 - `get_profile` — Read structured profile facts (identity, career targets, goals, learning state).
-- `available_topic_nodes` — DAG traversal: in-progress nodes first, then unlocked not-started nodes.
-- `recall_memories` — Semantic recall over older episodic memories (warm/cold tiers).
+- `available_topic_nodes` — What he can study right now: in-progress nodes first, then nodes whose prerequisites are all done.
+- `recall_memories` — Search his memories for what he said or did around a topic.
 
 Built-in PI tools available here: `read`, `grep`, `find`
 
-**Still missing:** **No vault writer yet.** The Python build wrote notes into the Obsidian vault (`Learning/Topics/`). Until that returns, draft the tutorial in the conversation and say you cannot file it into the vault — never claim a file was written.
+**Still missing:** **No vault writer yet.** Notes go under `learning/topics/` in this repo, not the Obsidian vault. Write them there and say where they landed — never claim a file was written unless it actually was.
 
 ## Workflows
 
