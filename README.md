@@ -324,10 +324,12 @@ of them at real memory.
 
 Honest status, so nothing here reads as working when it isn't:
 
-- **`mentor_agent_guidelines.md` is missing.** It is the constitution (§1–§7) that
-  `cognition/guidelines.py` loads from the repo root, and the loader fails open — so the
-  mentor currently runs *without* it. `scripts/tests/test_guidelines.py` reports 5/22
-  until the file is restored.
+- **The constitution is a reconstruction, not the original wording.** The original
+  `mentor_agent_guidelines.md` was never committed and was lost; the file now in the repo
+  root was rebuilt from `docs/Mentor Constitution.md` on 2026-09-15. It loads — the path
+  `orchestrator/config.py` resolves is exactly where the file lives — but §1 (anchor facts)
+  and §2 (standing orders) are a faithful rebuild rather than his own words, and are the
+  parts meant to be re-read and edited by hand.
 - **Two suites can delete live memory.** `scripts/tests/test_dna_memory_store.py` and
   `scripts/tools/eval_dna_memory.py` wipe `dna_memory`; both now refuse to run unless the
   database name contains `test` or `DNA_TEST_ALLOW_WIPE=1` is set. Seven more suites delete
@@ -341,12 +343,14 @@ Honest status, so nothing here reads as working when it isn't:
   resume, and post work from chat.
 - **No composer for the vault writer on the PI side**, so `tutorial-writer` declares that
   gap explicitly rather than pretending.
-- **Documentation drift.** The vault still points at files that are no longer at the repo
-  root — `dna_memory_redesign_v2.md`, `CLAUDE.md`, and
-  `COMMANDS.md` — and `docs/Project Structure.md` describes the pre-restructure layout
-  (`ui/`, a `Daily_Coach` agent, retired orchestrator nodes). `docs/Home.md` is the index
-  to fix first; a couple of source comments (`api/main.py`, `mentor/extensions/*.ts`)
-  cite the same retired docs.
+- **Documentation drift — narrowed.** `docs/Home.md`'s index is repointed to the files
+  that actually exist (`docs/Mentor Constitution.md`, `docs/DNA Memory Redesign v2.md`,
+  `docs/CLAUDE Project Context.md`, `docs/Original System Architecture.md`,
+  `docs/Original Bug Journal.md`, `mentor_persona.md`, `BRANCHES.md`), and
+  `docs/Project Structure.md` already accounts for `web/` replacing the legacy `ui/`.
+  What remains: the vault pages still describe the pre-PI Python-only layout (their
+  diagrams have no agent core in them), and a few source comments (`api/main.py`,
+  `mentor/extensions/*.ts`) cite retired docs.
 
 ---
 ## 📜 License

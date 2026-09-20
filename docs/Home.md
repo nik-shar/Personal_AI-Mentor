@@ -102,12 +102,16 @@ Filter the Obsidian graph view by these tags:
 
 ## 📁 Pre-existing Source Documents (external — not in graph)
 
-- [`📄` mentor_agent_guidelines.md](../mentor_agent_guidelines.md) — Operating constitution
-- [`📄` dna_memory_redesign_v2.md](../dna_memory_redesign_v2.md) — DNA v2 design doc
-- [`📄` docs/originals/ai-mentor-architecture.md](originals/docs/originals/ai-mentor-architecture.md) — Original architecture
-- [`📄` CLAUDE.md](../CLAUDE.md) — AI assistant context
-- [`📄` Notes.md](originals/Notes.md) — Cold-start design notes
-- [`📄` challenges.md](originals/challenges.md) — Original bug journal
+- [`📄` mentor_agent_guidelines.md](../mentor_agent_guidelines.md) — Operating constitution (§1–§7)
+- [`📄` mentor_persona.md](../mentor_persona.md) — The mentor's voice and hard rules
+- [`📄` Mentor Constitution.md](Mentor%20Constitution.md) — What the constitution holds and why
+- [`📄` BRANCHES.md](../BRANCHES.md) — This branch is the project; the TypeScript spike is archived beside it
+- [`📄` DNA Memory Redesign v2.md](DNA%20Memory%20Redesign%20v2.md) — DNA v2 design doc
+- [`📄` CLAUDE Project Context.md](CLAUDE%20Project%20Context.md) — AI assistant context
+- [`📄` Original System Architecture.md](Original%20System%20Architecture.md) — Original architecture
+- [`📄` Original Bug Journal.md](Original%20Bug%20Journal.md) — Bugs found the hard way
+- [`📄` originals/ai-mentor-architecture.md](originals/ai-mentor-architecture.md) — The first architecture sketch
+- [`📄` originals/Notes.md](originals/Notes.md) — Cold-start design notes
 - [`📄` README.md](../README.md) — Project README
 
 > Last updated: 2026-08-22
