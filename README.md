@@ -7,6 +7,12 @@
 [![Dashboard](https://img.shields.io/badge/Dashboard-Next.js-cyan.svg)](web/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+> **Branch note.** This branch (`main`) is **v1 — the shipped system** described
+> in this README. A second, TypeScript-only rewrite — the Python layer removed and
+> memory kept by a separate agent over plain files — lives on **`pi-native`**.
+> Both are complete systems with their own docs; see [`BRANCHES.md`](BRANCHES.md)
+> for the era map and how to run each.
+
 An intelligent, local-first personal AI mentor. Unlike stateless chatbots, this system maintains long-term cognitive continuity across learning roadmaps, daily planning, skill growth, and technical content creation.
 
 It runs on **two runtimes that share one boundary**:

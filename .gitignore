@@ -72,3 +72,29 @@ node_modules/
 # (github.com/earendil-works/pi). Never commit into this repo: it would
 # create an embedded repo / huge gitlink. Run it from ./pi via ./pi-test.sh.
 pi/
+
+# ---------------------------------------------------------------------------
+# Local runtime memory — never committed (this repository has a public remote)
+#
+# `data/` holds who he is and what he has done: conversation transcripts, the
+# per-month episode log, the learned-memory store, the day log, and the 48-slot
+# calendar. The files ARE the memory, and they live on this machine only.
+#
+# These rules matter across BOTH eras: the working tree is shared, so switching
+# branches leaves this directory on disk. A few names below belong to the
+# `pi-native` branch's file format — they are listed here so that checking out
+# that branch can never leave private memory one `git add -A` from the remote.
+#
+# Deliberately still tracked: `data/past_linkedin_posts/*.txt` (the voice
+# corpus) and `data/telegram_offset.json` (a chat cursor). Tracked files are
+# unaffected by ignore rules, so nothing below untracks them.
+# ---------------------------------------------------------------------------
+data/conversations/
+data/episodes/
+data/schedule/
+data/memories.jsonl
+data/daylog.jsonl
+data/requests.jsonl
+data/attention.jsonl
+data/.curator_cursor.json
+data/README.md
