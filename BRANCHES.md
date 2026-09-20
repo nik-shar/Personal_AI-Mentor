@@ -65,7 +65,6 @@ npm test                                    # 84 checks: identity, safety, memor
 ## History, and why `main` is safe to read as v1
 
 `main`'s tip is commit `49190bc`, a direct descendant of the initial commit, so
-this is the project's real history — not a squash or a rewrite. The v2 work was
-kept by branching from `03e558d` (`pi-native`), which is that branch's first
-parent. A local tag, `pre-v1-restore-03e558d`, marks the exact commit the rewrite
-branch was taken from.
+this is the project's real history — not a squash and not a rewrite. The v2 work
+was kept by branching from `03e558d`, which is that branch's first parent and is
+tagged `pre-v1-restore-03e558d` (pushed, so a fresh clone can see it too).
