@@ -68,3 +68,7 @@ Thumbs.db
 # (It gets `--session-dir` so it never shares the mentor's session storage.)
 .pi/memory-sessions/
 
+# The run lock from scripts/_guard.sh. Present only while a run is alive; it is
+# the thing that refuses a duplicate launch.
+.pi/run.lock/
+

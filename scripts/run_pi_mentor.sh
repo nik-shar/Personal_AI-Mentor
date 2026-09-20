@@ -7,13 +7,16 @@
 #   scripts/run_pi_mentor.sh --list-models     # prove extensions + provider loaded
 #
 # What it does:
-#   - loads .env so NEBIUS_API_KEY reaches the provider extension ($NEBIUS_API_KEY)
-#   - exports MENTOR_SERVICE_URL for the mentor bridge tools
+#   - loads .env (provider keys reach whichever extension needs them)
+#   - sources scripts/_guard.sh: a wall-clock cap, a duplicate-run lock, and a
+#     preflight that names the provider before anything is spent
 #   - passes -a (approve project resources) so .pi/settings.json and the
 #     mentor/ extensions load in non-interactive modes
 #
-# The sidecar (FastAPI) must be running for the memory tools to answer:
-#   uv run python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
+# There is no sidecar to start. The mentor reads `data/` directly.
+#
+# Budgeting: MENTOR_RUN_TIMEOUT_SECONDS (default 600) and MENTOR_MAX_TOOL_CALLS
+# (default 40). See scripts/_guard.sh for why both exist.
 
 set -euo pipefail
 
@@ -27,7 +30,8 @@ if [[ -f .env ]]; then
   set +a
 fi
 
-export MENTOR_SERVICE_URL="${MENTOR_SERVICE_URL:-http://127.0.0.1:8000}"
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/_guard.sh"
 
 PI_ENTRY="${PI_ENTRY:-$ROOT_DIR/pi/packages/coding-agent/dist/bundle/cli.js}"
 if [[ ! -f "$PI_ENTRY" ]]; then
@@ -36,4 +40,26 @@ if [[ ! -f "$PI_ENTRY" ]]; then
   exit 1
 fi
 
-exec node "$PI_ENTRY" -a "$@"
+# --list-models spends nothing, so it skips the lock and the cap entirely.
+if [[ "${1:-}" == "--list-models" ]]; then
+  exec node "$PI_ENTRY" -a "$@"
+fi
+
+GUARD_PROMPT_LABEL="${*:-interactive}"
+guard_acquire
+
+PROVIDER="${MENTOR_PROVIDER:-$(node -e "console.log(require('$ROOT_DIR/.pi/settings.json').defaultProvider)" 2>/dev/null || echo '?')}"
+MODEL="${MENTOR_MODEL:-$(node -e "console.log(require('$ROOT_DIR/.pi/settings.json').defaultModel)" 2>/dev/null || echo '?')}"
+guard_preflight "$PROVIDER" "$MODEL" "mentor run"
+
+# Give the budget clause to the agent when this is a one-shot (-p). The
+# interactive TUI has a human at the keyboard, so it needs no stop condition.
+ARGS=("$@")
+for i in "${!ARGS[@]}"; do
+  if [[ "${ARGS[$i]}" == "-p" || "${ARGS[$i]}" == "--print" ]] && [[ -n "${ARGS[$((i + 1))]:-}" ]]; then
+    ARGS[$((i + 1))]="${ARGS[$((i + 1))]}$(guard_budget_clause)"
+    break
+  fi
+done
+
+guard_run node "$PI_ENTRY" -a "${ARGS[@]}"

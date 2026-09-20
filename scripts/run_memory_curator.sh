@@ -51,19 +51,22 @@ if [[ ! -f "$PI_ENTRY" ]]; then
   exit 1
 fi
 
-# Curation is extraction, not reasoning, so the cheap fast tier is right — it is
-# also the tier that runs most often. Override with CURATOR_PROVIDER / CURATOR_MODEL.
+# shellcheck disable=SC1091
+source "$ROOT_DIR/scripts/_guard.sh"
+
+# Curation is extraction, not reasoning, so the cheapest capable tier is right —
+# it is also the tier that runs most often.
 #
-# Default is groq because it is what currently works. Measured on this machine:
-#   groq / openai/gpt-oss-120b   works, but rate-limits at 8k tokens/min — a long
-#                                transcript needs a retry (the cursor makes that safe)
-#   nebius-classifier / Qwen3-30B  HTTP 402: the model id is not served any more
-#   nebius / Qwen3-235B           HTTP 402: same account, out of credit at time of writing
+# Default is OpenAI's gpt-5-nano: $0.05/M in, $0.40/M out, $0.005/M cache-read.
+# That cache-read price matters — it is 10x cheaper than gpt-4.1-nano's, and a
+# curator re-reads a growing transcript as it walks forward.
 #
-# A 402 or 429 is not a broken pipeline — it is a failed run, and a failed run
-# leaves the cursor where it was. Re-run it and the range is still pending.
-CURATOR_PROVIDER="${CURATOR_PROVIDER:-groq}"
-CURATOR_MODEL="${CURATOR_MODEL:-openai/gpt-oss-120b}"
+# Measured on this machine, 2026-09-17:
+#   openai/gpt-5-nano     cheapest capable option; 400K context
+#   groq                  works, but 8k tokens/minute — one long range rate-limits
+#   nebius / nebius-classifier   HTTP 402, no credit
+CURATOR_PROVIDER="${CURATOR_PROVIDER:-openai}"
+CURATOR_MODEL="${CURATOR_MODEL:-gpt-5-nano}"
 # MEMORY_SKILL / PROVIDER_EXTENSION
 #
 # The provider is registered by an extension, so it must be loaded explicitly —
@@ -117,7 +120,15 @@ if [[ "${1:-}" == "--init" ]]; then
   exit 0
 fi
 
-exec node "$PI_ENTRY" \
+GUARD_PROMPT_LABEL="memory curator"
+guard_acquire
+guard_preflight "$CURATOR_PROVIDER" "$CURATOR_MODEL" "memory curation"
+
+# Curation is bounded by design — it reads a range and stops. A short cap is
+# enough, and the lock stops a duplicate run from doubling the spend.
+MENTOR_RUN_TIMEOUT_SECONDS="${MENTOR_RUN_TIMEOUT_SECONDS:-300}"
+
+guard_run node "$PI_ENTRY" \
   --mode text \
   --no-extensions \
   -e "$PROVIDER_EXTENSION" \
@@ -130,4 +141,4 @@ exec node "$PI_ENTRY" \
   --no-session \
   --exclude-tools bash,write,edit \
   -a \
-  -p "$PROMPT"
+  -p "$PROMPT$(guard_budget_clause)"
