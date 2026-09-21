@@ -1,3 +1,11 @@
+> **Archived — superseded by [nik-shar/steward](https://github.com/nik-shar/steward).**
+> Steward is a smaller, cleaner restart of the same idea: personal memory with
+> confidence ceilings, a consent gate before every write that touches the world, and
+> capability-scoped subagents. It is Python-only and single-process, and it embeds the
+> agent loop as Tau's harness (a library) rather than vendoring one.
+> This repository is kept as a read-only record of the earlier approach; nothing here
+> is being continued.
+
 # 🧠 Personal AI Mentor — Local-First Multi-Agent Ecosystem
 
 [![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
